@@ -1,4 +1,4 @@
-# @accelerate-data/eval-harness
+# @accelerate-data/promptfoo-eval-harness
 
 Shared Promptfoo + OpenCode eval harness. Owns model/tier policy, provider
 wiring, package discovery, Promptfoo state export, and artifact guards.
@@ -9,7 +9,7 @@ Consumers own eval YAML, prompts, fixtures, and assertions.
 Bootstrap a new repo:
 
 ```bash
-npx @accelerate-data/eval-harness eval-harness-init
+npx @accelerate-data/promptfoo-eval-harness eval-harness-init
 ```
 
 This scaffolds `tests/evals/` with `package.json`, `opencode.json`,

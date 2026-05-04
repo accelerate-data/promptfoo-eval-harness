@@ -15,7 +15,7 @@
 #   4. Installs promptfoo + the harness package via npm if a package.json was
 #      generated (skipped when --no-install is passed).
 #   5. Adds an npm Dependabot entry for <target> to .github/dependabot.yml so
-#      the repo receives PRs when @accelerate-data/eval-harness releases a new
+#      the repo receives PRs when @accelerate-data/promptfoo-eval-harness releases a new
 #      version (skipped when the entry already exists).
 
 set -euo pipefail
@@ -94,7 +94,7 @@ else
 fi
 
 # Add a Dependabot npm entry for the eval target so consumer repos get PRs
-# when @accelerate-data/eval-harness releases a new version.
+# when @accelerate-data/promptfoo-eval-harness releases a new version.
 DEPENDABOT_DIR="$REPO_ROOT/.github"
 DEPENDABOT="$DEPENDABOT_DIR/dependabot.yml"
 DEPENDABOT_ENTRY="  - package-ecosystem: npm

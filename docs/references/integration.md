@@ -189,7 +189,7 @@ Use this distinction when wiring CI:
 The harness is published to npm. Bumping is a normal `npm update` operation:
 
 ```bash
-npm update @accelerate-data/eval-harness
+npm update @accelerate-data/promptfoo-eval-harness
 ```
 
 When a major version bumps the wire format (provider scheme, tier schema,
