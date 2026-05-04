@@ -11,7 +11,7 @@
     "view": "ad-evals view"
   },
   "dependencies": {
-    "@accelerate-data/promptfoo-eval-harness": "^0.1.0",
+    "@acceleratedata/promptfoo-eval-harness": "^0.1.0",
     "js-yaml": "^4.1.1",
     "promptfoo": "0.121.9"
   }
