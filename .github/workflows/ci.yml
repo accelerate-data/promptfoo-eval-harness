@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - name: Lint markdown
+        run: npx --no markdownlint-cli '**/*.md' --ignore node_modules
+      - name: Verify init script is syntactically valid
+        run: bash -n bin/eval-harness-init.sh

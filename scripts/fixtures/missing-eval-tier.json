@@ -1,0 +1,10 @@
+{
+  "description": "Test fixture: package config missing metadata.eval_tier.",
+  "prompts": ["Hello"],
+  "tests": [
+    {
+      "description": "[smoke] placeholder",
+      "assert": [{ "type": "javascript", "value": "true" }]
+    }
+  ]
+}

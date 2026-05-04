@@ -1,0 +1,11 @@
+node_modules/
+.cache/
+.tmp/
+output/
+results/
+.env
+.env.local
+.DS_Store
+*.log
+npm-debug.log*
+.promptfoo/
