@@ -14,7 +14,8 @@ Shared Promptfoo + OpenCode eval harness. Owns model/tier policy, provider wirin
 | `config/eval-tiers.toml` | Framework | Default tier → agent mapping. Templates copy this for new repos |
 | `templates/` | Framework | Files copied into consumer repos at init time |
 | `examples/harness-smoke/` | Framework | Minimal package config used to verify a fresh install |
-| `docs/` | Docs | Integration reference, design, running evals, writing packages |
+| `docs/setup.md` | Docs | Step-by-step setup guide for engineers and coding agents |
+| `docs/design.md` | Docs | Framework architecture and ownership boundary |
 
 ## Commands
 

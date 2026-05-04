@@ -53,9 +53,7 @@ npm run doctor
 
 | Doc | What it covers |
 | --- | --- |
-| [Integration Reference](docs/integration.md) | Full integration guide: layout, config surface, runtime state, common failures, upgrade path |
-| [Writing a Package](docs/writing-a-package.md) | How to create an eval package with configs, prompts, fixtures, and assertions |
-| [Running Evals](docs/running-evals.md) | Smoke, regression, targeted, CI wiring, worktree setup |
+| [Setup Guide](docs/setup.md) | Bootstrap, verify, write a package, run evals, wire CI — give this to a coding agent |
 | [Design](docs/design.md) | Framework architecture and ownership boundary |
 
 ## What the Framework Owns
