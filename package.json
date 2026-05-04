@@ -34,7 +34,7 @@
     "smol-toml": "^1.6.1"
   },
   "devDependencies": {
-    "markdownlint-cli": "^0.42.0"
+    "markdownlint-cli": "^0.48.0"
   },
   "overrides": {
     "@anthropic-ai/sdk": ">=0.91.1",
