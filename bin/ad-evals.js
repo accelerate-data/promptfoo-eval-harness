@@ -5,7 +5,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 bootstrapEvalRoot();
-ensureDepsInstalled();
 
 const { buildHarnessEnv } = require('../scripts/framework/environment');
 const { discoverPackageConfigs } = require('../scripts/framework/package-discovery');
@@ -172,6 +171,7 @@ function printHelp() {
 }
 
 if (require.main === module) {
+  ensureDepsInstalled();
   try {
     process.exitCode = run();
   } catch (error) {
