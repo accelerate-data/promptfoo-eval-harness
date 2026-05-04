@@ -14,6 +14,9 @@
 #   3. Adds the .gitignore lines the runtime needs.
 #   4. Installs promptfoo + the harness package via npm if a package.json was
 #      generated (skipped when --no-install is passed).
+#   5. Adds an npm Dependabot entry for <target> to .github/dependabot.yml so
+#      the repo receives PRs when @accelerate-data/eval-harness releases a new
+#      version (skipped when the entry already exists).
 
 set -euo pipefail
 
@@ -88,6 +91,26 @@ if [ "$INSTALL" -eq 1 ] && [ -f "$DEST/package.json" ]; then
   ( cd "$DEST" && npm install --no-audit --no-fund )
 else
   echo "==> Skipping npm install. Run: cd $DEST && npm install"
+fi
+
+# Add a Dependabot npm entry for the eval target so consumer repos get PRs
+# when @accelerate-data/eval-harness releases a new version.
+DEPENDABOT_DIR="$REPO_ROOT/.github"
+DEPENDABOT="$DEPENDABOT_DIR/dependabot.yml"
+DEPENDABOT_ENTRY="  - package-ecosystem: npm
+    directory: /$TARGET
+    schedule:
+      interval: weekly"
+
+mkdir -p "$DEPENDABOT_DIR"
+if [ ! -f "$DEPENDABOT" ]; then
+  printf 'version: 2\nupdates:\n%s\n' "$DEPENDABOT_ENTRY" > "$DEPENDABOT"
+  echo "  create $DEPENDABOT"
+elif grep -qF "directory: /$TARGET" "$DEPENDABOT"; then
+  echo "  skip  $DEPENDABOT (/$TARGET entry already present)"
+else
+  printf '\n%s\n' "$DEPENDABOT_ENTRY" >> "$DEPENDABOT"
+  echo "  update $DEPENDABOT (added /$TARGET npm entry)"
 fi
 
 cat <<EOM
