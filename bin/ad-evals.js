@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 const { execFileSync, spawnSync } = require('node:child_process');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
 bootstrapEvalRoot();
+ensureDepsInstalled();
 
 const { buildHarnessEnv } = require('../scripts/framework/environment');
 const { discoverPackageConfigs } = require('../scripts/framework/package-discovery');
@@ -24,6 +26,29 @@ function bootstrapEvalRoot() {
     }
   } catch {
     // No git context. Framework modules fall back to __dirname-based resolution.
+  }
+}
+
+function ensureDepsInstalled() {
+  const evalRoot = process.env.AD_EVALS_ROOT;
+  if (!evalRoot) return;
+
+  const lockfile = path.join(evalRoot, 'package-lock.json');
+  const stamp = path.join(evalRoot, 'node_modules', '.install-stamp');
+
+  if (fs.existsSync(lockfile) && fs.existsSync(stamp)) {
+    const lockHash = crypto.createHash('sha256').update(fs.readFileSync(lockfile)).digest('hex');
+    if (fs.readFileSync(stamp, 'utf8').trim() === lockHash) return;
+  }
+
+  execFileSync('npm', ['install', '--no-audit', '--no-fund'], {
+    cwd: evalRoot,
+    stdio: 'inherit',
+  });
+
+  if (fs.existsSync(lockfile)) {
+    const lockHash = crypto.createHash('sha256').update(fs.readFileSync(lockfile)).digest('hex');
+    fs.writeFileSync(stamp, lockHash);
   }
 }
 
