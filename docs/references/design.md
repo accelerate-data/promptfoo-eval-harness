@@ -1,13 +1,12 @@
 # Shared Eval Harness Design
 
-> **Status:** Draft
-> **Primary code:** `tests/evals/bin/ad-evals.js`, `tests/evals/scripts/framework/`
+> **Primary code:** `bin/ad-evals.js`, `scripts/framework/`
 
 ## Overview
 
 The shared eval harness separates reusable Promptfoo/OpenCode execution mechanics from project-owned eval content. The framework owns model and tier policy, runtime environment setup, provider wiring, Promptfoo state export, config materialization, package discovery, and cleanup guards. Projects keep package configs, prompts, fixtures, assertions, and scenario rationale under `tests/evals/`.
 
-This repo proves the boundary locally before extraction into a standalone package. The framework files should move unchanged into a package after a second consumer validates the same boundary.
+Published to npm as `@accelerate-data/promptfoo-eval-harness`. Consumer repos install it via `npx @accelerate-data/promptfoo-eval-harness eval-harness-init`.
 
 ## Design Scope
 
@@ -26,7 +25,6 @@ This repo proves the boundary locally before extraction into a standalone packag
 - Package-specific prompt quality.
 - Product-specific eval assertions.
 - Full regression pass rates for live model behavior.
-- Publishing mechanics for the future npm package.
 
 ## Key Decisions
 

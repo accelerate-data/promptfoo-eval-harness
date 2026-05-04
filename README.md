@@ -13,18 +13,22 @@ npx @accelerate-data/promptfoo-eval-harness eval-harness-init
 ```
 
 This scaffolds `tests/evals/` with `package.json`, `opencode.json`,
-`config/eval-tiers.toml`, and a `harness-smoke` package.
+`config/eval-tiers.toml`, and a `harness-smoke` package, installs
+dependencies, and adds a Dependabot entry to `.github/dependabot.yml`
+so the repo receives PRs when a new version is released.
 
-Then verify the install:
+Verify the install:
 
 ```bash
 cd tests/evals
-npm install
 npm test                     # contract tests
 npm run doctor               # print resolved paths
 npm run eval:harness-smoke   # one live execution
 npm run eval:smoke           # smoke across all packages
 ```
+
+Dependencies are installed automatically on the first `ad-evals` run
+and re-installed whenever `package-lock.json` changes.
 
 ## Usage
 

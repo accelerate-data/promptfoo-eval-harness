@@ -192,6 +192,10 @@ The harness is published to npm. Bumping is a normal `npm update` operation:
 npm update @accelerate-data/promptfoo-eval-harness
 ```
 
+`eval-harness-init` adds a Dependabot entry to `.github/dependabot.yml`
+in the consumer repo root that covers `tests/evals/`. Dependabot will
+open a PR automatically when a new version is published.
+
 When a major version bumps the wire format (provider scheme, tier schema,
 artifact prefixes), the release notes will spell out the migration. The
 framework will not silently migrate consumer files.
@@ -200,9 +204,13 @@ framework will not silently migrate consumer files.
 
 The consumer's worktree bootstrap (if any) should:
 
-- Install dependencies (`npm install` at the relevant package root)
 - NOT create `tests/evals/.promptfoo` symlinks
 - NOT pre-warm shared state — the runtime exports it
+
+`ad-evals` automatically runs `npm install` in `tests/evals/` on startup
+when `package-lock.json` has changed since the last run (tracked via
+`node_modules/.install-stamp`), so no explicit install step is needed in
+worktree scripts.
 
 If migrating from a pre-extraction layout, remove any worktree script step
 that touches Promptfoo state.
