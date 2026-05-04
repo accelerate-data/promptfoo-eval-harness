@@ -1,0 +1,20 @@
+{
+  "description": "OpenCode harness smoke test.",
+  "metadata": {
+    "eval_tier": "light"
+  },
+  "prompts": [
+    "Return JSON only: {\"scenario\":\"harness-smoke\",\"ok\":true,\"failures\":[]}"
+  ],
+  "tests": [
+    {
+      "description": "[smoke] harness-smoke",
+      "assert": [
+        {
+          "type": "javascript",
+          "value": "const match = output.match(/\\{[\\s\\S]*\\}/); if (!match) return false; const data = JSON.parse(match[0]); data.scenario === 'harness-smoke' && data.ok === true && Array.isArray(data.failures) && data.failures.length === 0"
+        }
+      ]
+    }
+  ]
+}

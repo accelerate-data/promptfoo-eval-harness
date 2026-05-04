@@ -1,0 +1,10 @@
+title = "promptfoo-eval-harness gitleaks rules"
+
+[extend]
+useDefault = true
+
+[[allowlist]]
+description = "Allow placeholder API keys in .env.example"
+paths = [
+  '''\.env\.example$''',
+]
