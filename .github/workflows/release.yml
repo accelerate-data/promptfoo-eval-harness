@@ -29,7 +29,7 @@ jobs:
           else
             git log --pretty=format:'- %s (%h)' > CHANGELOG_TMP.md
           fi
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           body_path: CHANGELOG_TMP.md
           generate_release_notes: true
