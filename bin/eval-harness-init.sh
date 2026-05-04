@@ -9,8 +9,8 @@
 #
 # What it does:
 #   1. Creates <target>/ with packages/, scripts/, config/, docs/.
-#   2. Copies opencode.json, eval-tiers.toml, package.json, contract test, and
-#      a harness-smoke starter package into <target>.
+#   2. Copies AGENTS.md, opencode.json, eval-tiers.toml, package.json, contract
+#      test, and a harness-smoke starter package into <target>.
 #   3. Adds the .gitignore lines the runtime needs.
 #   4. Installs promptfoo + the harness package via npm if a package.json was
 #      generated (skipped when --no-install is passed).
@@ -66,6 +66,7 @@ copy_if_absent() {
   echo "  copy  $dst"
 }
 
+copy_if_absent "$TEMPLATES/AGENTS.md"                   "$DEST/AGENTS.md"
 copy_if_absent "$TEMPLATES/opencode.json"               "$DEST/opencode.json"
 copy_if_absent "$TEMPLATES/config/eval-tiers.toml"      "$DEST/config/eval-tiers.toml"
 copy_if_absent "$TEMPLATES/package.json"                "$DEST/package.json"
