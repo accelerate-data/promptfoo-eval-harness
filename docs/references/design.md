@@ -31,7 +31,7 @@ This repo proves the boundary locally before extraction into a standalone packag
 ## Key Decisions
 
 | Decision | Rationale |
-|---|---|
+| --- | --- |
 | Keep a local `ad-evals` CLI first | Proves package boundaries without taking on package publishing and cross-repo versioning in the same change. |
 | Make suite-level tier policy framework-owned | Model selection, agent sizing, and OpenCode runtime options should be consistent across projects instead of duplicated in every package config. |
 | Keep eval content project-owned | YAML/JSON configs, prompts, fixtures, and domain assertions change with each repo's product behavior. |
@@ -48,7 +48,7 @@ The harness entrypoint is `tests/evals/bin/ad-evals.js`. It resolves paths, prep
 The framework modules split responsibilities:
 
 | Module | Responsibility |
-|---|---|
+| --- | --- |
 | `scripts/framework/paths.js` | Resolves repo root, eval root, Git common dir, shared state dirs, and worktree-local artifact dirs. |
 | `scripts/framework/environment.js` | Builds `PROMPTFOO_*`, `XDG_STATE_HOME`, `CLAUDE_PLUGIN_ROOT`, and temp-dir environment exports. |
 | `scripts/framework/package-discovery.js` | Discovers package Promptfoo configs named `promptfooconfig.*` or `suite.*`. |
@@ -63,7 +63,7 @@ The framework modules split responsibilities:
 Runtime state is resolved by `scripts/framework/paths.js`:
 
 | State | Location | Why |
-|---|---|---|
+| --- | --- | --- |
 | Promptfoo config/database | Git common dir, `ad-evals/promptfoo` | Shared across worktrees without repo-visible symlinks. |
 | OpenCode state | Git common dir, `ad-evals/opencode-state` | Reuses OpenCode runtime state across worktrees. |
 | Promptfoo cache | `tests/evals/.cache/promptfoo` | Worktree-local generated artifact. |
@@ -89,7 +89,7 @@ The eval-local `tests/evals/eval-map.json` records package ownership, commands, 
 ## Command Semantics
 
 | Command | Meaning |
-|---|---|
+| --- | --- |
 | `npm test` | Runs deterministic harness and assertion contracts without live model calls. |
 | `npm run doctor` | Prints resolved repo, state, cache, log, media, and temp paths. |
 | `npm run eval:harness-smoke` | Runs the minimal live execution package. |
@@ -134,7 +134,7 @@ The next extraction step is to port a second repo without changing the framework
 ## Key Source Files
 
 | File | Purpose |
-|---|---|
+| --- | --- |
 | `tests/evals/bin/ad-evals.js` | CLI facade and command routing. |
 | `tests/evals/scripts/framework/paths.js` | Runtime path/state resolution. |
 | `tests/evals/scripts/framework/environment.js` | Promptfoo/OpenCode environment export. |
