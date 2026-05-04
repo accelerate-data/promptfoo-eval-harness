@@ -123,5 +123,5 @@ Next steps:
        cd $TARGET
        npm run eval:harness-smoke
   3. Author your first package under $TARGET/packages/<name>/promptfooconfig.json.
-     See https://github.com/accelerate-data/promptfoo-eval-harness/blob/main/docs/guides/writing-a-package.md
+     See https://github.com/accelerate-data/promptfoo-eval-harness/blob/main/docs/writing-a-package.md
 EOM
