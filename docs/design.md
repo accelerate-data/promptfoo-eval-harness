@@ -6,7 +6,7 @@
 
 The shared eval harness separates reusable Promptfoo/OpenCode execution mechanics from project-owned eval content. The framework owns model and tier policy, runtime environment setup, provider wiring, Promptfoo state export, config materialization, package discovery, and cleanup guards. Projects keep package configs, prompts, fixtures, assertions, and scenario rationale under `tests/evals/`.
 
-Published to npm as `@accelerate-data/promptfoo-eval-harness`. Consumer repos install it via `npx @accelerate-data/promptfoo-eval-harness eval-harness-init`.
+Published to npm as `@accelerate-data/promptfoo-eval-harness`. Consumer repos install it via `npx --package @accelerate-data/promptfoo-eval-harness eval-harness-init`.
 
 ## Design Scope
 

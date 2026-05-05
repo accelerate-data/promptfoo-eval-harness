@@ -9,7 +9,7 @@ Consumers own eval YAML, prompts, fixtures, and assertions.
 Bootstrap a new repo:
 
 ```bash
-npx @accelerate-data/promptfoo-eval-harness eval-harness-init
+npx --package @accelerate-data/promptfoo-eval-harness eval-harness-init
 ```
 
 This scaffolds `tests/evals/` with `package.json`, `opencode.json`,

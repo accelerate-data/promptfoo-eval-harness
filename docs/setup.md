@@ -28,7 +28,7 @@ repo. Follow the steps in order. Each step includes a verification command.
 Run from the repo root:
 
 ```bash
-npx @accelerate-data/promptfoo-eval-harness eval-harness-init
+npx --package @accelerate-data/promptfoo-eval-harness eval-harness-init
 ```
 
 This creates `tests/evals/` containing:
