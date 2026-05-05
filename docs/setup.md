@@ -17,6 +17,9 @@ repo. Follow the steps in order. Each step includes a verification command.
 - npm
 - A git repository with a clean working tree
 - OpenCode CLI available on `PATH` — confirm with `opencode --version`
+- **Claude Code agents**: `Bash(npx *)` must be in your allow list. Add it to
+  `~/.claude/settings.json` under `permissions.allow` before running Step 1,
+  or the bootstrap command will be blocked.
 
 ---
 
