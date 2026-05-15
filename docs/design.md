@@ -53,6 +53,7 @@ The framework modules split responsibilities:
 | `scripts/framework/eval-tier-config.js` | Loads and validates suite-owned tier policy from `config/eval-tiers.toml`. |
 | `scripts/framework/resolve-promptfoo-config.js` | Rewrites package configs into resolved configs with provider blocks and stable file URLs. |
 | `scripts/framework/opencode-cli-provider.js` | Adapts Promptfoo provider calls into `opencode run` invocations. |
+| `scripts/framework/openhands-agent-server-provider.js` | Adapts Promptfoo provider calls into OpenHands Agent Server REST + WS conversations with adapter-configurable agent identity and LiteLLM-routed models. |
 | `scripts/framework/run-promptfoo-with-guard.js` | Splits multi-config Promptfoo calls, materializes configs, runs Promptfoo, and enforces cleanup safety. |
 | `scripts/framework/roots.js` | Centralizes eval-root and repo-root constants for moved framework modules. |
 

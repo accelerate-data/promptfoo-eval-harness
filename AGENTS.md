@@ -9,6 +9,7 @@ Shared Promptfoo + OpenCode eval harness. Owns model/tier policy, provider wirin
 | `bin/ad-evals.js` | Framework | CLI: `smoke`, `regression`, `run`, `view`, `doctor`, `test`, raw `promptfoo` passthrough |
 | `bin/eval-harness-init.sh` | Framework | Bootstrap shell script — scaffolds `tests/evals/` in a consumer repo |
 | `scripts/framework/` | Framework | Path/env resolution, package discovery, provider wiring, OpenCode CLI provider, runtime guards |
+| `scripts/framework/openhands-agent-server-provider.js` | Framework | OpenHands Agent Server provider (REST + WS, LiteLLM-routed, adapter-configurable) |
 | `scripts/*.test.js` | Framework | Harness contract tests run on every CI build |
 | `scripts/promptfoo.sh` | Framework | Thin shell wrapper for piping raw flags into the Node CLI |
 | `config/eval-tiers.toml` | Framework | Default tier → agent mapping. Templates copy this for new repos |
