@@ -7,6 +7,9 @@ git clone https://github.com/accelerate-data/promptfoo-eval-harness.git
 cd promptfoo-eval-harness
 npm install
 npm test
+
+# Sync OpenCode skills (requires ~/.codex marketplace cache)
+bash scripts/sync-opencode-skills.sh
 ```
 
 ## Branch Naming

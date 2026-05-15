@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "lsp": {
+    "rust": {
+      "command": ["rust-analyzer"],
+      "root_markers": ["Cargo.toml"]
+    },
+    "typescript": {
+      "command": ["typescript-language-server", "--stdio"],
+      "root_markers": ["package.json", "tsconfig.json"],
+      "extensions": [".ts", ".tsx", ".js", ".jsx"]
+    }
+  },
+  "instructions": ["AGENTS.md"]
+}
