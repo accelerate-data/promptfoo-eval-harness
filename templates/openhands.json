@@ -1,0 +1,84 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "openhands_version": "1.21.1",
+  "openhands_server_url": "http://127.0.0.1:18745",
+  "openhands_server_startup_timeout_ms": 30000,
+  "litellm_provider": "anthropic",
+  "adapter": {
+    "agent_id": "my-plugin:my-agent",
+    "agent_entrypoint_file": "plugins/my-plugin/agents/my-openhands-agent.md",
+    "microagent_install_path": ".openhands/microagents/repo.md",
+    "agent_semantics": "openhands-microagent with skill-via-bash loading",
+    "eval_mode_preamble": "This is an automated eval run. Auto-proceed at every gate without pausing for user confirmation. Select the first/recommended option at every decision point."
+  },
+  "agent": {
+    "eval_light": {
+      "description": "OpenHands eval agent for light-cost scenarios.",
+      "mode": "primary",
+      "model": "anthropic/claude-haiku-4-5-20251001",
+      "temperature": 0.1,
+      "steps": 60,
+      "permission": {
+        "read": "allow",
+        "write": "allow",
+        "edit": "allow",
+        "bash": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "list": "allow",
+        "webfetch": "deny"
+      }
+    },
+    "eval_standard": {
+      "description": "OpenHands eval agent for standard scenarios.",
+      "mode": "primary",
+      "model": "anthropic/claude-sonnet-4-6",
+      "temperature": 0.1,
+      "steps": 100,
+      "permission": {
+        "read": "allow",
+        "write": "allow",
+        "edit": "allow",
+        "bash": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "list": "allow",
+        "webfetch": "deny"
+      }
+    },
+    "eval_high": {
+      "description": "OpenHands eval agent for high-cost scenarios.",
+      "mode": "primary",
+      "model": "anthropic/claude-sonnet-4-6",
+      "temperature": 0.1,
+      "steps": 120,
+      "permission": {
+        "read": "allow",
+        "write": "allow",
+        "edit": "allow",
+        "bash": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "list": "allow",
+        "webfetch": "deny"
+      }
+    },
+    "eval_x_high": {
+      "description": "OpenHands eval agent for extra-high-cost scenarios.",
+      "mode": "primary",
+      "model": "anthropic/claude-sonnet-4-6",
+      "temperature": 0.1,
+      "steps": 200,
+      "permission": {
+        "read": "allow",
+        "write": "allow",
+        "edit": "allow",
+        "bash": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "list": "allow",
+        "webfetch": "deny"
+      }
+    }
+  }
+}
