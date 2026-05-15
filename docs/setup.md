@@ -107,7 +107,7 @@ Create `tests/evals/packages/my-feature/prompt.txt` with your prompt text.
 
 ```bash
 cd tests/evals
-node bin/ad-evals.js run packages/my-feature/promptfooconfig.json
+ad-evals run packages/my-feature/promptfooconfig.json
 ```
 
 Then run the full smoke sweep to confirm every package in the repo executes:
@@ -150,7 +150,7 @@ cd tests/evals && npm run eval:regression
 | `npm run eval:harness-smoke` | Run the built-in starter package. Confirms OpenCode is wired. |
 | `npm run eval:smoke` | Run the `[smoke]` test from every package. |
 | `npm run eval:regression` | Run all tests in all packages. |
-| `node bin/ad-evals.js run <config>` | Run one specific package config. |
+| `ad-evals run <config>` | Run one specific package config. |
 
 ### Tier selection
 

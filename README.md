@@ -40,7 +40,7 @@ npm run eval:smoke
 npm run eval:regression
 
 # Run one package
-node bin/ad-evals.js run packages/my-feature/promptfooconfig.json
+ad-evals run packages/my-feature/promptfooconfig.json
 
 # Open the Promptfoo UI
 npm run view

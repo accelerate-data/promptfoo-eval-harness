@@ -42,10 +42,12 @@ OpenCode agents.
 ```bash
 cd tests/evals
 
-npm test                                                        # contract tests — no API calls
-npm run eval:smoke                                              # smoke test every package
-node bin/ad-evals.js run packages/<feature>/promptfooconfig.json  # one package
-npm run eval:regression                                         # all tests in all packages
+npm test                # contract tests — no API calls
+npm run eval:smoke      # smoke test every package
+npm run eval:regression # all tests in all packages
+
+# Run a single package via the harness CLI:
+ad-evals run packages/<feature>/promptfooconfig.json
 ```
 
 Exit code `100` from a smoke or regression run means the harness ran but an
