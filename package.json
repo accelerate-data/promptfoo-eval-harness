@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "js-yaml": "^4.1.1",
-    "promptfoo": "0.121.9",
+    "promptfoo": "0.121.11",
     "smol-toml": "^1.6.1"
   },
   "devDependencies": {
