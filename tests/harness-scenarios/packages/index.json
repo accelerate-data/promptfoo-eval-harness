@@ -34,6 +34,13 @@
       "provider_kinds": ["opencode_sdk"],
       "requires_live_key": false,
       "expected_runtime_seconds": 30
+    },
+    {
+      "name": "codex-sdk-mock-multi-turn",
+      "path": "tests/harness-scenarios/packages/codex-sdk-mock-multi-turn",
+      "provider_kinds": ["codex_sdk"],
+      "requires_live_key": false,
+      "expected_runtime_seconds": 30
     }
   ]
 }
