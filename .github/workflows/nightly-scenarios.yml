@@ -1,0 +1,50 @@
+name: Nightly Scenarios
+
+on:
+  schedule:
+    # 02:00 UTC every night
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  run-scenarios:
+    name: Run framework scenarios (mock mode)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Install Node dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Pre-warm openhands-sdk uv cache
+        # Matches the exact spawn spec used by the bridge (spec §6.3).
+        # AD_EVALS_OFFLINE is NOT set here — this step IS the warm-up.
+        run: |
+          source $HOME/.cargo/env 2>/dev/null || true
+          uv run --python 3.12 --with openhands-sdk==1.22.1 python -c "import openhands.sdk"
+
+      - name: Run all framework scenarios (mock mode, no live keys)
+        env:
+          OPENCODE_MOCK_MODE: '1'
+          PYTHONPATH: ${{ github.workspace }}/tests/_mock_openhands_sdk
+          # Outer concurrency: 1 on CI to avoid SQLite contention between
+          # parallel Promptfoo child processes sharing the same state DB.
+          AD_EVALS_OUTER_CONCURRENCY: '1'
+        run: |
+          source $HOME/.cargo/env 2>/dev/null || true
+          node bin/ad-evals.js run tests/harness-scenarios/packages
