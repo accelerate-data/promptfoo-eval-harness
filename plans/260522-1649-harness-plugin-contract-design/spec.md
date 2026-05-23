@@ -479,8 +479,13 @@ and `options.config.provider_label` at `callApi` time and dispatches.
 | `opencode_cli` | `require('./opencode-cli-provider.js')` (in-process module call) | — (CLI is spawned by the provider itself, single shot) | Not supported in v1.0.0; `vars.turns` length > 1 → `validation` error |
 | `openhands_sdk` | `spawn('uv', ['run', ..., 'python', '_python_adapter.py', 'openhands_sdk'])` | Python | Yes (NDJSON loop) |
 | `claude_agent_sdk` (Phase 2) | `spawn('uv', ['run', ..., 'python', '_python_adapter.py', 'claude_agent_sdk'])` | Python | Yes |
-| `opencode_sdk` (Phase 3) | `spawn('node', ['_node_adapter.js', 'opencode_sdk'])` | Node | Yes |
-| `codex_sdk` (Phase 4) | `spawn('node', ['_node_adapter.js', 'codex_sdk'])` | Node | Yes |
+| `opencode_sdk` (Phase 3) | in-process (`require(registry.module)`) via Phase 9.5 generic in-proc dispatch | — (Node, in-proc) | Yes |
+| `codex_sdk` (Phase 4) | in-process (`require(registry.module)`) via Phase 9.5 generic in-proc dispatch | — (Node, in-proc) | Yes |
+
+> **Note (2026-05-23, Phase 9.5).** The Node SDK rows above are
+> superseded by the in-proc dispatch path documented in §2.5 Amendment
+> below. No `_node_adapter.js` subprocess shim is built. See
+> `phase-09.5-bridge-inproc-and-hierarchical-concurrency.md`.
 
 **Why a single bridge URL** (was: per-`provider_kind` URLs):
 
@@ -584,6 +589,21 @@ Two distinct benchmarks (§A.1 lists both):
 
 Both are throwaway scripts, NOT live-LLM L4 scenarios, and neither runs
 in nightly CI.
+
+> **Amended 2026-05-23 — see Phase 9.5.** Node SDK providers may run
+> **in-process** inside the bridge process via dynamic ESM `await import()`
+> (for ESM-only packages) or plain CJS `require()` (for CJS-compatible
+> packages), instead of via a `_node_adapter.js` subprocess. The generic
+> `mode === 'inproc'` dispatch branch in `_node_bridge.js` (added in
+> Phase 9.5) loads the provider module declared by
+> `KIND_REGISTRY.<kind>.module` and drives the same
+> `init/turn/finalize/shutdown` lifecycle as the subprocess path. The
+> `_node_adapter.js` subprocess shim drawn in §2.2 for Node SDKs is
+> NOT built; future Node SDK kinds follow the in-proc pattern unless
+> they require sandbox isolation that only a subprocess can provide
+> (in which case a new phase would design a Node subprocess adapter).
+> Cold-spawn cost (this section's table) therefore applies only to
+> Python SDK kinds and `opencode_cli`'s CLI binary — not to Node SDKs.
 
 ### 2.6 Adapter implementation pseudo-code
 
