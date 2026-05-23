@@ -144,6 +144,48 @@ The next extraction step is to port a second repo without changing the framework
 | `tests/evals/eval-map.json` | Coding-agent navigation map. |
 | `scripts/worktree.sh` | Worktree bootstrap without Promptfoo symlink ownership. |
 
+## In-proc Node SDK dispatch (added in Phase 9.5, v1.0.1)
+
+VD-2174-12 lands three orthogonal foundation pieces that unblock the Node-SDK-based providers (Claude Agent SDK, OpenCode SDK, Codex SDK) shipping in Phases 10/11/12.
+
+### 1. Generic `mode === 'inproc'` dispatch in `_node_bridge.js`
+
+`KIND_REGISTRY` now recognises a generic in-proc shape distinct from the OpenCode CLI special case:
+
+```js
+KIND_REGISTRY = {
+  some_node_sdk_kind: {
+    mode: 'inproc',
+    module: '/abs/path/to/provider.js', // CJS or ESM
+    factoryName: 'create',               // optional, defaults to 'create'
+  },
+  // ...
+}
+```
+
+`HarnessBridgeProvider#_dispatch` detects `mode === 'inproc'` and routes through the new `_dispatchInproc(kind, registry, cfg, context, prompt, accum)` class method instead of spawning a subprocess. The lifecycle exactly mirrors the subprocess path:
+
+1. `parseTurns(vars.turns)` — empty arrays → `errorReturn`.
+2. `_ensureWorkspace(runId, caseId)` and inject `workspace_root` into the cfg passed to `init`.
+3. One-time per-kind provider instantiation cached in module-level `_inprocProviderCache` (`Map<kind, providerInstance>`); `session` is created fresh per `callApi` from `provider.init(cfgWithWorkspace)`.
+4. Sequential `provider.turn(session, turns[i])` calls; each turn captures latency and pushes `{ input, output, tool_calls }` into `transcript`/`turnOutputs`. Any thrown exception OR populated `res.error` object short-circuits to `errorReturn` with the appropriate `provider_error` shape.
+5. `provider.finalize(session)` merges `cost_usd`, `tokens`, `transcript_summary` into the returned metadata symmetric with the subprocess path.
+6. `finally{}` calls `provider.shutdown(session)` best-effort and `_cleanWorkspace(runId, caseId)`.
+
+The existing `opencode_cli` specialized in-proc branch (lines 425-524) is untouched. The generic branch fires only when `kind !== 'opencode_cli'` AND `registry.mode === 'inproc'`. Errors flow through `normalizeErr` → `errorReturn` to keep the cfg-error / provider-error / runtime-error categorization identical across paths.
+
+Test exports `makeBridge._clearInprocCache()` and `makeBridge._lastInprocSession()` let L2 round-trip tests inject a `test_inproc_mock` kind and assert workspace injection without polluting production state.
+
+### 2. Hierarchical `acquire(kind?)` in `concurrency.js`
+
+`concurrency.js` now supports an optional per-kind nested limiter. `acquire(kind)` first acquires the global gate (`AD_EVALS_MAX_CONCURRENCY`, default 4), then — if `[concurrency.<kind>]` is configured in `config/eval-tiers.toml` — acquires the kind-specific gate, returning a single `release()` that releases in reverse order. This lets a kind like `openhands_sdk` cap its own parallelism below the global without starving other kinds.
+
+### 3. Async-aware `_python_adapter.py`
+
+`scripts/framework/providers/_python_adapter.py` now wraps each lifecycle call through `_maybe_await(provider, name, *args, **kwargs)` which calls `inspect.iscoroutinefunction(method)` and, if true, runs the coroutine via `asyncio.run()`. The four call sites (`_handle_init`, `_handle_turn`, `_handle_finalize`, `_handle_shutdown`) plus the `finally:` shutdown in `main()` all route through the wrapper. The provider registry gains two test-only fixtures (`async_mock`, `async_mock_raising`) used by harness L2 contract tests.
+
+These three changes ship together in v1.0.1.
+
 ## Open Questions
 
 1. `[extraction]` What package name and versioning policy should the standalone harness use?

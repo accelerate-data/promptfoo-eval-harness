@@ -1,7 +1,7 @@
 ---
 title: "Phase 9.5 — Bridge in-proc dispatch + hierarchical concurrency + async adapter"
 description: "Foundation phase: generic mode==='inproc' dispatch in _node_bridge.js, hierarchical acquire(kind) in concurrency.js, async-aware _python_adapter.py. No new user-visible provider."
-status: pending
+status: complete
 priority: P1
 effort: ~3 days
 branch: feature/vd-2174-multi-sdk-plugin-contract
@@ -11,9 +11,9 @@ created: 2026-05-23
 
 # Phase 9.5 — Bridge in-proc dispatch + hierarchical concurrency + async adapter (v1.0.1 / VD-2174-12)
 
-> **Sub-issue:** VD-2174-12 (new, splits off the foundation work from VD-2174-9/10/11). **Status:** PLANNED.
-> **Blocked by:** v1.0.0 ship (phases 01-09 complete on this branch). **Blocks:** Phase 10, 11, 12.
-> Time budget: ~3 days. **No PR raised at end of phase** (per user directive).
+> **Sub-issue:** VD-2174-12 (new, splits off the foundation work from VD-2174-9/10/11). **Status:** COMPLETE (2026-05-23).
+> **Blocked by:** v1.0.0 ship (phases 01-09 complete on this branch). **Blocks:** Phase 10, 11, 12 — UNBLOCKED.
+> Time budget: ~3 days (actual: 1 day). **No PR raised at end of phase** (per user directive).
 
 ## Context Links
 

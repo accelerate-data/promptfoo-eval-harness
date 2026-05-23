@@ -28,7 +28,7 @@
 | 07 | [Cross-cutting: secrets / logger / workspace post-run assertion (E)](phase-07-cross-cutting.md) | VD-2174-6 | pending | 03 |
 | 08 | [Scenarios + CLI directory walk + migration (F + G)](phase-08-scenarios-cli-dir-migration.md) | VD-2174-7 | pending | 05, 06, 07 |
 | 09 | [Distribution prep (H)](phase-09-distribution-prep.md) | VD-2174-8 | pending | 08 |
-| 09.5 | [Bridge in-proc dispatch + hierarchical concurrency + async adapter (v1.0.1)](phase-09.5-bridge-inproc-and-hierarchical-concurrency.md) | VD-2174-12 | PLANNED | 09 (v1.0.0 shipped) |
+| 09.5 | [Bridge in-proc dispatch + hierarchical concurrency + async adapter (v1.0.1)](phase-09.5-bridge-inproc-and-hierarchical-concurrency.md) | VD-2174-12 | COMPLETE (2026-05-23) | 09 (v1.0.0 shipped) |
 | 10 | [Claude Agent SDK provider (v1.1.0)](phase-10-claude-agent-sdk-provider.md) | VD-2174-9 | PLANNED | 09.5 (async-aware adapter) |
 | 11 | [OpenCode SDK provider (v1.2.0)](phase-11-opencode-sdk-provider.md) | VD-2174-10 | PLANNED | 09.5 (generic in-proc dispatch) |
 | 12 | [Codex SDK provider (v1.3.0)](phase-12-codex-sdk-provider.md) | VD-2174-11 | PLANNED | 09.5 (generic in-proc dispatch) |
