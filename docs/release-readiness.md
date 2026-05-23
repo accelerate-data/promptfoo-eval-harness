@@ -16,28 +16,36 @@ Complete every item before tagging `v1.0.0` and publishing to npm `latest`.
 - [ ] `npm test` passes — all Node contract tests green.
 - [ ] `uv run pytest -q` passes — Python tests green; coverage ≥ 70 %.
 - [ ] All `requires_live_key=false` scenarios green locally:
+
   ```bash
   OPENCODE_MOCK_MODE=1 PYTHONPATH=tests/_mock_openhands_sdk \
     node bin/ad-evals.js run tests/harness-scenarios/packages
   ```
+
   Expected: 3/3 PASS, exit 0.
+
 - [ ] `npm run lint:md` clean — no markdown lint errors.
 - [ ] `npm run bench:spawn-cost` passes — p95 spawn cost within budget
   (baseline from phase 07; ±10 % acceptable).
 - [ ] Shell syntax check: `bash -n bin/eval-harness-init.sh` exits 0.
 - [ ] Workflow YAML parses:
+
   ```bash
   node -e "require('js-yaml').load(require('fs').readFileSync('.github/workflows/publish.yml','utf8'))"
   node -e "require('js-yaml').load(require('fs').readFileSync('.github/workflows/nightly-scenarios.yml','utf8'))"
   ```
+
   Both must exit 0.
+
 - [ ] No secrets in committed source:
+
   ```bash
   git grep -nE 'api_key|API_KEY|sk_live|ak_live' \
     -- ':(exclude)plans/' ':(exclude)spikes/' \
        ':(exclude)*.test.*' ':(exclude)CHANGELOG.md' \
        ':(exclude)docs/migration-v0-to-v1.md'
   ```
+
   Must return zero matches.
 
 ## Human pre-checks
@@ -64,6 +72,7 @@ git push origin v1.0.0
 ```
 
 The `publish.yml` workflow will:
+
 1. Run `npm test`, `pytest`, and all mock-mode scenarios.
 2. Verify two consecutive nightly-green runs on `main` (or skip if
    `SKIP_NIGHTLY_GATE_FIRST_RELEASE` is set).

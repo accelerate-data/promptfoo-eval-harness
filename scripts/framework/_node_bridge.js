@@ -237,6 +237,15 @@ function _buildSpawnSpec(kind, adapterPath) {
       minEnv[key] = process.env[key];
     }
   }
+  // Normalize PYTHONPATH to absolute paths so sitecustomize.py's _THIS_DIR check
+  // succeeds regardless of whether the caller passed a relative path (e.g.
+  // PYTHONPATH=tests/_mock_openhands_sdk from the repo root).
+  if (minEnv.PYTHONPATH) {
+    minEnv.PYTHONPATH = minEnv.PYTHONPATH
+      .split(path.delimiter)
+      .map((p) => path.resolve(p))
+      .join(path.delimiter);
+  }
   // Always suppress banners
   minEnv.OPENHANDS_SUPPRESS_BANNER = '1';
 
