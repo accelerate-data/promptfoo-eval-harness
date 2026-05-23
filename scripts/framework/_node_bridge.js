@@ -90,8 +90,9 @@ function _clearInprocCache() {
 // ---------------------------------------------------------------------------
 // KIND_REGISTRY — maps provider_kind → dispatch strategy.
 // v1.0.0 shipped 2 entries; Phase 10 (v1.1.0) added claude_agent_sdk;
-// Phase 11 (v1.2.0) adds opencode_sdk (in-proc Node). The test asserts the
-// exact key set so a new provider lands deliberately.
+// Phase 11 (v1.2.0) adds opencode_sdk (in-proc Node); Phase 12 (v1.3.0)
+// adds codex_sdk (in-proc Node, CJS). The test asserts the exact key set
+// so a new provider lands deliberately.
 // ---------------------------------------------------------------------------
 const _ADAPTER_PATH = path.resolve(__dirname, 'providers', '_python_adapter.py');
 
@@ -142,6 +143,16 @@ const KIND_REGISTRY = {
   opencode_sdk: {
     mode: 'inproc',
     module: path.resolve(__dirname, 'providers', 'opencode_sdk', 'provider.js'),
+  },
+  // Phase 12 (VD-2174-11) — Codex SDK. In-proc Node provider (CJS) that
+  // reserves a per-session HOME via mkdtempSync and mkdtemp+git inits a
+  // per-case workspace before invoking @openai/codex-sdk's Codex.startThread.
+  // The provider drives the same lifecycle (init/turn/finalize/shutdown) the
+  // bridge expects from any inproc kind. The @openai/codex-sdk dependency is
+  // pinned in Phase 12 Step 3.
+  codex_sdk: {
+    mode: 'inproc',
+    module: path.resolve(__dirname, 'providers', 'codex_sdk', 'provider.js'),
   },
 };
 

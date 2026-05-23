@@ -16,7 +16,7 @@ provider `config:` block to select a provider.
 | `openhands_sdk` | stable | `mock/openhands-mock`, `openhands/anthropic-claude-3-5-sonnet` | Subprocess via `uv run --with openhands-sdk==1.22.1`; supports multi-turn. |
 | `claude_agent_sdk` | stable | `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-haiku-4-5` (aliases: `opus`, `sonnet`, `haiku`) | Subprocess via `uv run --with claude-agent-sdk==0.2.85`; async lifecycle; multi-turn via stateful `ClaudeSDKClient`; default tools `Read`/`Write`/`Edit`/`Glob`/`Grep` (Bash & web gated via `permissions.allow_shell` / `allow_web`). |
 | `opencode_sdk` | stable | `anthropic/claude-sonnet-4-6`, `openai/gpt-4o` (any model the OpenCode server accepts) | In-proc Node provider via `@opencode-ai/sdk`; boots an ephemeral `127.0.0.1:0` OpenCode server per run, dispatches turns through one `client.session.prompt` per case; agents limited to `{build, plan, general}`; requires Node ≥ 20. |
-| `codex_sdk` | planned | — | Phase 4 (v1.3.0). |
+| `codex_sdk` | stable | `gpt-4o`, `gpt-4.1` (any model the Codex SDK accepts) | In-proc Node provider via `@openai/codex-sdk` (CJS); reserves a per-session HOME and a per-case `git init`-ed workspace before invoking `Codex.startThread`; multi-turn via a single Thread; defaults `sandbox_mode=workspace-write` and `model_reasoning_effort=medium` (overridable via `extra`); requires Node ≥ 20. |
 
 ## Scenarios
 
