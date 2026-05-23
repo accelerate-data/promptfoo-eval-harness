@@ -5,6 +5,121 @@ const { parse } = require('smol-toml');
 const { EVAL_ROOT, REPO_ROOT } = require('./roots');
 const CONFIG_PATH = path.join(EVAL_ROOT, 'config', 'eval-tiers.toml');
 const REQUIRED_TIERS = ['light', 'standard', 'high', 'x_high'];
+
+// ---------------------------------------------------------------------------
+// parseTierConfig — accept v0 (legacy OpenCode-only) OR v1 (multi-provider)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a tier config object (already deserialized from TOML or JSON) and
+ * normalize it to the internal v1 representation.
+ *
+ * v0 shape: { runtime: {...}, tiers: { light: { agent: "..." }, ... } }
+ * v1 shape: { version: "v1", tiers: { low: { providers: [...] } } }
+ *
+ * The returned object always has:
+ *   { version: "v1" | "v1-normalized", tiers: { <name>: { providers: [...] } } }
+ *
+ * @param {object} raw - Deserialized config (TOML or JSON).
+ * @param {string} [sourcePath] - Path hint for error messages.
+ * @returns {{ version: string, tiers: object, concurrency?: object }}
+ * @throws {Error} if the config is malformed.
+ */
+function parseTierConfig(raw, sourcePath = '<unknown>') {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`parseTierConfig: expected a plain object at ${sourcePath}`);
+  }
+
+  // Detect v1: has explicit version:"v1" OR has tiers.X.providers arrays
+  if (_isV1Shape(raw)) {
+    _validateV1Shape(raw, sourcePath);
+    return { ...raw, version: raw.version || 'v1' };
+  }
+
+  // Detect v0: has tiers.X.agent strings (legacy OpenCode-only shape)
+  if (_isV0Shape(raw)) {
+    return _normalizeV0ToV1(raw, sourcePath);
+  }
+
+  throw new Error(
+    `parseTierConfig: cannot determine tier config version at ${sourcePath}. ` +
+    'Expected either v0 shape (tiers.<name>.agent) or v1 shape (tiers.<name>.providers[]).',
+  );
+}
+
+function _isV1Shape(raw) {
+  if (raw.version === 'v1') return true;
+  if (!raw.tiers || typeof raw.tiers !== 'object') return false;
+  // Check if ANY tier has a providers array
+  return Object.values(raw.tiers).some(
+    (t) => t && Array.isArray(t.providers),
+  );
+}
+
+function _isV0Shape(raw) {
+  if (!raw.tiers || typeof raw.tiers !== 'object') return false;
+  // All tiers have an agent field (v0 shape)
+  return Object.values(raw.tiers).every(
+    (t) => t && typeof t.agent === 'string',
+  );
+}
+
+function _validateV1Shape(raw, sourcePath) {
+  if (!raw.tiers || typeof raw.tiers !== 'object') {
+    throw new Error(`parseTierConfig: missing tiers field at ${sourcePath}`);
+  }
+  for (const [tierName, tier] of Object.entries(raw.tiers)) {
+    if (!tier || typeof tier !== 'object') {
+      throw new Error(`parseTierConfig: tier "${tierName}" must be an object at ${sourcePath}`);
+    }
+    if (!Array.isArray(tier.providers)) {
+      throw new Error(
+        `parseTierConfig: tiers.${tierName}.providers must be an array at ${sourcePath}`,
+      );
+    }
+    for (let i = 0; i < tier.providers.length; i++) {
+      const p = tier.providers[i];
+      if (!p || typeof p !== 'object') {
+        throw new Error(
+          `parseTierConfig: tiers.${tierName}.providers[${i}] must be an object at ${sourcePath}`,
+        );
+      }
+      if (!p.provider_kind || typeof p.provider_kind !== 'string') {
+        throw new Error(
+          `parseTierConfig: tiers.${tierName}.providers[${i}].provider_kind is required at ${sourcePath}`,
+        );
+      }
+    }
+  }
+}
+
+function _normalizeV0ToV1(raw, sourcePath) {
+  const normalizedTiers = {};
+  for (const [tierName, tier] of Object.entries(raw.tiers)) {
+    if (!tier || typeof tier.agent !== 'string' || tier.agent.trim() === '') {
+      throw new Error(
+        `parseTierConfig: v0 tier "${tierName}" missing valid agent field at ${sourcePath}`,
+      );
+    }
+    normalizedTiers[tierName] = {
+      providers: [
+        {
+          provider_kind: 'opencode_cli',
+          label: tier.agent,
+          model: null,
+          agent_config: raw.runtime && raw.runtime.opencode_config
+            ? raw.runtime.opencode_config
+            : null,
+        },
+      ],
+    };
+  }
+  return {
+    version: 'v1-normalized',
+    tiers: normalizedTiers,
+    ...(raw.runtime ? { runtime: raw.runtime } : {}),
+  };
+}
 const REQUIRED_RUNTIME_FIELDS = [
   'provider_id',
   'opencode_config',
@@ -209,4 +324,5 @@ module.exports = {
   REQUIRED_TIERS,
   loadEvalTierConfig,
   resolveEvalTier,
+  parseTierConfig,
 };

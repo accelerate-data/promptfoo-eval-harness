@@ -1,0 +1,50 @@
+{
+  "version": "v1",
+  "tiers": {
+    "low": {
+      "providers": [
+        {
+          "provider_kind": "opencode_cli",
+          "model": "anthropic/claude-haiku-4-5",
+          "label": "opencode-haiku",
+          "agent_config": "opencode.json"
+        },
+        {
+          "provider_kind": "openhands_sdk",
+          "model": "anthropic/claude-haiku-4-5",
+          "label": "openhands-haiku"
+        }
+      ]
+    },
+    "standard": {
+      "providers": [
+        {
+          "provider_kind": "opencode_cli",
+          "model": "anthropic/claude-sonnet-4-6",
+          "label": "opencode-sonnet",
+          "agent_config": "opencode.json"
+        },
+        {
+          "provider_kind": "openhands_sdk",
+          "model": "anthropic/claude-sonnet-4-6",
+          "label": "openhands-sonnet"
+        }
+      ],
+      "runtime": {
+        "timeout_per_turn_s": 300
+      }
+    },
+    "high": {
+      "providers": [
+        {
+          "provider_kind": "opencode_cli",
+          "model": "anthropic/claude-sonnet-4-6",
+          "label": "opencode-sonnet-high"
+        }
+      ]
+    }
+  },
+  "concurrency": {
+    "default_max_concurrency": 4
+  }
+}
