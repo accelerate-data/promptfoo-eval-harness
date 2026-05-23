@@ -105,7 +105,8 @@ describe('_node_bridge', () => {
       const makeBridge = loadBridge();
       const provider = makeBridge({ config: { provider_kind: 'opencode_cli', provider_label: 'test' } });
       assert.strictEqual(typeof provider.id, 'function');
-      assert.strictEqual(typeof provider.label, 'function');
+      // label must be a STRING property (not a function) — Promptfoo 0.121.x calls .toLowerCase() on it.
+      assert.strictEqual(typeof provider.label, 'string');
       assert.strictEqual(typeof provider.callApi, 'function');
     });
   });

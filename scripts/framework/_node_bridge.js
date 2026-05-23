@@ -21,6 +21,7 @@ const path = require('node:path');
 
 const { loadSdkPins } = require('./sdk-pins');
 const { getGlobalLimit, makeConcurrencyGate } = require('./concurrency');
+const { redact } = require('./secret_redactor');
 
 // ---------------------------------------------------------------------------
 // Spawn injection point — tests can override _spawnImpl to stub child processes
@@ -143,12 +144,12 @@ function baseMetadata(cfg, extra) {
 
 function normalizeErr(e) {
   if (e && typeof e === 'object' && e.code && e.message) {
-    return { code: e.code, message: e.message, retryable: !!e.retryable };
+    return { code: e.code, message: redact(e.message), retryable: !!e.retryable };
   }
   if (typeof e === 'string') {
-    return { code: 'provider_error', message: e, retryable: false };
+    return { code: 'provider_error', message: redact(e), retryable: false };
   }
-  return { code: 'bridge_error', message: e?.message || String(e), retryable: false };
+  return { code: 'bridge_error', message: redact(e?.message || String(e)), retryable: false };
 }
 
 function errorReturn(cfg, err, transcript, turnOutputs, latencyPerTurn, turnsCompleted, startedAt) {
@@ -324,7 +325,7 @@ class HarnessBridgeProvider {
     return `harness:${label}`;
   }
 
-  label() {
+  get label() {
     return this.options.config?.provider_label || this.options.provider_label || 'unknown';
   }
 
@@ -625,14 +626,18 @@ class HarnessBridgeProvider {
  * Factory function called by Promptfoo when it loads this file via file://.
  * Returns a Promptfoo-compatible provider object.
  *
+ * `label` is a plain string property (not a function) because Promptfoo 0.121.x
+ * accesses `provider.label` as a string and calls `.toLowerCase()` on it.
+ * The HarnessBridgeProvider class exposes `label` as a getter for the same reason.
+ *
  * @param {object} options - Per-provider config from the tier config block.
- * @returns {{ id: () => string, label: () => string, callApi: Function }}
+ * @returns {{ id: () => string, label: string, callApi: Function }}
  */
 function makeBridge(options) {
   const bridge = new HarnessBridgeProvider(options);
   return {
     id: () => bridge.id(),
-    label: () => bridge.label(),
+    label: bridge.label,   // string property — satisfies Promptfoo telemetry (.toLowerCase())
     callApi: bridge.callApi.bind(bridge),
   };
 }

@@ -1,0 +1,42 @@
+[
+  {
+    "name": "anthropic_api_key",
+    "regex": "sk-ant-(?:api|admin)[0-9a-zA-Z_-]{40,}",
+    "replacement": "<redacted-anthropic-api-key>"
+  },
+  {
+    "name": "openai_api_key",
+    "regex": "sk-(?!ant-)(?:proj-)?[0-9a-zA-Z_-]{40,}",
+    "replacement": "<redacted-openai-api-key>"
+  },
+  {
+    "name": "openhands_api_key",
+    "regex": "oh-[0-9a-f]{40}",
+    "replacement": "<redacted-openhands-api-key>"
+  },
+  {
+    "name": "aws_access_key_id",
+    "regex": "AKIA[0-9A-Z]{16}",
+    "replacement": "<redacted-aws-access-key>"
+  },
+  {
+    "name": "aws_secret_access_key",
+    "regex": "(?<![A-Za-z0-9/+=])[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])",
+    "replacement": "<redacted-aws-secret-key>"
+  },
+  {
+    "name": "github_pat",
+    "regex": "gh[pousr]_[A-Za-z0-9_]{36,}",
+    "replacement": "<redacted-github-pat>"
+  },
+  {
+    "name": "bearer_token",
+    "regex": "(?i)Bearer\\s+[A-Za-z0-9._~+/\\-]+=*",
+    "replacement": "Bearer <redacted-bearer-token>"
+  },
+  {
+    "name": "gcp_service_account_json_snippet",
+    "regex": "\"private_key\":\\s*\"-----BEGIN PRIVATE KEY-----[\\s\\S]*?-----END PRIVATE KEY-----\\\\n\"",
+    "replacement": "<redacted-gcp-private-key>"
+  }
+]
