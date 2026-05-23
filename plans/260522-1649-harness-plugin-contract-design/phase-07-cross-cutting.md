@@ -1,6 +1,6 @@
 # Phase 07 — Cross-Cutting: Secrets / Logger / Workspace Guard (E.22-E.24)
 
-> **Sub-issue:** VD-2174-6. **Status:** pending. **Blocked by:** phase 03.
+> **Sub-issue:** VD-2174-6. **Status:** complete. **Blocked by:** phase 03.
 > Time budget: ~3 days.
 
 ## Context Links
@@ -140,10 +140,11 @@ Note: NO new `workspace-guard.js` module. Spec §7.3 explicitly defers that modu
 
 ## Todo List
 
-- [ ] E.22: Redactor + parity test + bridge wired through real redactor.
-- [ ] E.23: Structured logger + migration of `console.log` / `print` callsites.
-- [ ] E.24: Post-run assertion branch in `run-promptfoo-with-guard.js` + Layer 2 test cases A-D.
-- [ ] `npm test`, `pytest`, `ruff check`, `npm run lint:md` all green.
+- [x] E.22: Redactor + parity test + bridge wired through real redactor.
+- [x] Bridge label shape bug fixed (post-phase-05 finding); provider-shim.js deleted.
+- [x] E.23: Structured logger + migration of `console.log` / `print` callsites.
+- [x] E.24: Post-run assertion branch in `run-promptfoo-with-guard.js` + Layer 2 test cases A-D.
+- [x] `npm test` (257 pass), `pytest` (107 pass), `ruff check` clean, `npm run lint:md` clean, bench PASS.
 
 ## Success Criteria
 
