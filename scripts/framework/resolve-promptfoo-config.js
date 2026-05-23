@@ -1,8 +1,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const yaml = require('js-yaml');
 
-const { loadEvalTierConfig, resolveEvalTier } = require('./eval-tier-config');
+const { loadEvalTierConfig, resolveEvalTier, parseTierConfig } = require('./eval-tier-config');
 const { EVAL_ROOT, FRAMEWORK_ROOT } = require('./roots');
 
 const FRAMEWORK_SCHEME = 'framework://';
@@ -160,9 +161,130 @@ function rewriteRelativeFileUrls(value, sourceConfigDir, targetConfigDir) {
   return `file://${rewrittenTarget}${suffix}`;
 }
 
+// ---------------------------------------------------------------------------
+// Single bridge URL emitter — v1 multi-provider tier support (spec §2.2, §4.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * The canonical bridge URL (spec §2.2).
+ * All provider entries point here regardless of provider_kind.
+ */
+const BRIDGE_FILE_URL = `file://${path.join(FRAMEWORK_ROOT, '_node_bridge.js')}`;
+
+/**
+ * Build a stable run_id for a single ad-evals invocation.
+ * Stable per process (generated once, cached).
+ */
+let _runId = null;
+function getRunId() {
+  if (!_runId) {
+    _runId = crypto.randomUUID();
+  }
+  return _runId;
+}
+
+/**
+ * Reset run_id (for testing only).
+ */
+function _resetRunId() {
+  _runId = null;
+}
+
+/**
+ * Build a deterministic case_id for a (tier × provider_index × scenario_index) tuple.
+ *
+ * @param {string} tierName
+ * @param {number} providerIndex
+ * @param {number} scenarioIndex
+ * @param {string} runId
+ * @returns {string}
+ */
+function _buildCaseId(tierName, providerIndex, scenarioIndex, runId) {
+  return `${runId}:${tierName}:p${providerIndex}:s${scenarioIndex}`;
+}
+
+/**
+ * Build a single Promptfoo provider entry for one (tier × provider) combination.
+ *
+ * @param {string} tierName
+ * @param {object} providerEntry - One entry from tiers.<name>.providers[]
+ * @param {number} providerIndex
+ * @param {number} scenarioIndex
+ * @param {string} runId
+ * @returns {object} Promptfoo provider object
+ */
+function _buildBridgeProviderEntry(tierName, providerEntry, providerIndex, scenarioIndex, runId) {
+  const { provider_kind, model, label, agent_config, ...rest } = providerEntry;
+  // Build provider_options from remaining fields (not provider_kind / model / label)
+  const provider_options = Object.keys(rest).length > 0 ? rest : undefined;
+
+  const config = {
+    provider_kind,
+    model: model || null,
+    run_id: runId,
+    case_id: _buildCaseId(tierName, providerIndex, scenarioIndex, runId),
+    ...(label ? { provider_label: label } : {}),
+    ...(provider_options ? { provider_options } : {}),
+  };
+
+  return {
+    id: BRIDGE_FILE_URL,
+    label: label || `${tierName}/${provider_kind}/${model || 'unknown'}`,
+    config,
+  };
+}
+
+/**
+ * Resolve a Promptfoo config from a v1 tier config + scenarios list.
+ * Emits exactly ONE bridge URL per (tier × provider × scenario).
+ *
+ * Per spec §4.1: --compare semantics are deferred to Phase 2.
+ * This function does NOT emit --compare or per-provider fan-out.
+ *
+ * @param {object} tierConfig - v1 tier config (or v0, will be normalized via parseTierConfig).
+ * @param {Array<object>} scenarios - Array of Promptfoo test case objects.
+ * @param {string} [tierName] - If specified, only emit providers for this tier.
+ * @param {object} [opts]
+ * @param {string} [opts.runId] - Override run_id (default: stable per-process UUID).
+ * @returns {{ providers: object[], tests: object[] }} Promptfoo config fragment.
+ */
+function resolveMultiProviderConfig(tierConfig, scenarios, tierName, opts = {}) {
+  const normalized = parseTierConfig(tierConfig, opts.sourcePath || '<input>');
+  const runId = opts.runId || getRunId();
+
+  const tiersToProcess = tierName
+    ? { [tierName]: normalized.tiers[tierName] }
+    : normalized.tiers;
+
+  if (tierName && !normalized.tiers[tierName]) {
+    throw new Error(`resolveMultiProviderConfig: unknown tier "${tierName}"`);
+  }
+
+  const providers = [];
+
+  for (const [tName, tier] of Object.entries(tiersToProcess)) {
+    for (let pIdx = 0; pIdx < tier.providers.length; pIdx++) {
+      for (let sIdx = 0; sIdx < scenarios.length; sIdx++) {
+        providers.push(
+          _buildBridgeProviderEntry(tName, tier.providers[pIdx], pIdx, sIdx, runId),
+        );
+      }
+    }
+  }
+
+  return {
+    providers,
+    tests: scenarios,
+  };
+}
+
 module.exports = {
   TMP_ROOT,
+  BRIDGE_FILE_URL,
   resolveConfigFile,
   resolveProviderId,
   writeResolvedConfig,
+  resolveMultiProviderConfig,
+  getRunId,
+  _resetRunId,
 };
