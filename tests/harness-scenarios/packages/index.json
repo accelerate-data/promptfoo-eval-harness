@@ -1,0 +1,10 @@
+{
+  "scenarios": [
+    {
+      "name": "opencode-cli-compatibility",
+      "path": "packages/opencode-cli-compatibility",
+      "requires_live_key": false,
+      "kinds": ["opencode_cli"]
+    }
+  ]
+}

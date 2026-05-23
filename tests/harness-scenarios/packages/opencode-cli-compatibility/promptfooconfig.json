@@ -1,0 +1,58 @@
+{
+  "description": "opencode-cli-compatibility — locks the legacy OpenCode CLI provider behavior (spec §7.4, C.15).",
+  "providers": [
+    {
+      "id": "file://provider-shim.js",
+      "label": "opencode-cli/claude-sonnet-4-6",
+      "config": {
+        "provider_kind": "opencode_cli",
+        "provider_label": "opencode-cli/claude-sonnet-4-6",
+        "model": "claude-sonnet-4-6",
+        "agent": "eval_light",
+        "opencode_config": "opencode.json",
+        "project_dir": ".",
+        "format": "json",
+        "log_level": "WARN",
+        "print_logs": false
+      }
+    }
+  ],
+  "tests": [
+    {
+      "description": "[compat] greet single-turn",
+      "vars": {
+        "turns": "Reply with exactly one word: hello"
+      },
+      "assert": [
+        {
+          "type": "javascript",
+          "value": "output && output.length > 0"
+        }
+      ]
+    },
+    {
+      "description": "[compat] summarize single-turn",
+      "vars": {
+        "turns": "Summarize this in exactly 5 words: The quick brown fox jumps over the lazy dog."
+      },
+      "assert": [
+        {
+          "type": "javascript",
+          "value": "output && output.length > 0"
+        }
+      ]
+    },
+    {
+      "description": "[compat] extract numbers single-turn",
+      "vars": {
+        "turns": "Extract only the numbers from this sentence and list them comma-separated: There are 3 cats, 12 dogs, and 7 birds."
+      },
+      "assert": [
+        {
+          "type": "javascript",
+          "value": "output && output.length > 0"
+        }
+      ]
+    }
+  ]
+}
