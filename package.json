@@ -1,6 +1,6 @@
 {
   "name": "@accelerate-data/promptfoo-eval-harness",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Promptfoo + OpenCode eval harness for agent behavior. Owns model/tier policy, provider wiring, package discovery, state export, and artifact guards. Consumers own eval YAML, prompts, fixtures, and assertions.",
   "license": "Elastic-2.0",
   "repository": {
@@ -8,7 +8,7 @@
     "url": "git+https://github.com/accelerate-data/promptfoo-eval-harness.git"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "bin": {
     "ad-evals": "bin/ad-evals.js",
@@ -32,6 +32,7 @@
     "bench": "npm run bench:spawn-cost && npm run bench:throughput"
   },
   "dependencies": {
+    "@opencode-ai/sdk": "1.15.10",
     "js-yaml": "^4.1.1",
     "p-limit": "^3.1.0",
     "promptfoo": "0.121.11",
