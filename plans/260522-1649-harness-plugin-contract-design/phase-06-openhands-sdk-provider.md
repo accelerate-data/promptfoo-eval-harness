@@ -1,6 +1,6 @@
 # Phase 06 — OpenHands SDK Provider (D.16-D.21)
 
-> **Sub-issue:** VD-2174-5. **Status:** pending. **Blocked by:** phase 03 (and informed by phase 01 spike verdict).
+> **Sub-issue:** VD-2174-5. **Status:** complete. **Blocked by:** phase 03 (and informed by phase 01 spike verdict).
 > Time budget: ~1 week.
 
 ## Context Links
@@ -169,13 +169,13 @@ scripts/framework/_node_bridge.js
 
 ## Todo List
 
-- [ ] D.16: tool_registry.py.
-- [ ] D.17: model_resolver.py + tests.
-- [ ] D.18: event_extractor.py + tests with fixture events.
-- [ ] D.19: agent_factory.py.
-- [ ] D.20: provider.py + Layer 3 mock-SDK tests (all green).
-- [ ] D.21: _node_bridge.js dispatch entry + Layer 2 dispatch-resolution-only test (NDJSON round-trip is owned by phase 03).
-- [ ] Confirm `pytest` and `npm test` both green.
+- [x] D.16: tool_registry.py.
+- [x] D.17: model_resolver.py + tests.
+- [x] D.18: event_extractor.py + tests with fixture events.
+- [x] D.19: agent_factory.py.
+- [x] D.20: provider.py + Layer 3 mock-SDK tests (all green).
+- [x] D.21: _node_bridge.js dispatch entry + Layer 2 dispatch-resolution-only test (NDJSON round-trip is owned by phase 03).
+- [x] Confirm `pytest` and `npm test` both green.
 
 ## Success Criteria
 
