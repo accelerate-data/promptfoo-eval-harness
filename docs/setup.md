@@ -171,6 +171,34 @@ cd tests/evals && npm run eval:regression
 | `llm-rubric` | Model-graded assertion with a rubric string |
 | `is-json` | Validates that output parses as JSON |
 
+### OpenHands SDK — gateway mode (v1.4.0)
+
+For the `openhands_sdk` provider you only need two inputs: the model name and a `base_url`
+pointing at any OpenAI-compatible endpoint (Accelerate gateway, a LiteLLM proxy, a vLLM
+deployment, etc.). Auth is a single env var: `OPENHANDS_API_KEY`.
+
+Drop the provider into your tier config (eval-tiers.toml, v1 schema):
+
+```toml
+[[tiers.standard.providers]]
+provider_kind = "openhands_sdk"
+model = "gpt-4o"
+
+[tiers.standard.providers.extra]
+base_url = "https://gateway.internal/v1"
+```
+
+Then export the key once:
+
+```bash
+export OPENHANDS_API_KEY=sk-...
+```
+
+Gateway mode skips the LiteLLM prefix-routing alias table entirely — the model name
+passes through verbatim, and only `OPENHANDS_API_KEY` is consulted. The legacy mode
+(omit `base_url`) still works for repos that resolve via `_MODEL_MAP` and the
+`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` prefix routing.
+
 ### Common failures
 
 | Symptom | Fix |

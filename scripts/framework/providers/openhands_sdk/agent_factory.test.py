@@ -33,11 +33,19 @@ import pytest  # noqa: E402
 
 
 class _MockLLM:
-    def __init__(self, model, api_key=None, temperature=0.0, max_tokens=4096):
+    def __init__(
+        self,
+        model,
+        api_key=None,
+        temperature=0.0,
+        max_tokens=4096,
+        base_url=None,
+    ):
         self.model = model
         self.api_key = api_key
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.base_url = base_url
 
 
 class _MockAgent:
@@ -190,4 +198,81 @@ class TestBuildAgent:
 
         cfg = self._make_cfg(model="claude-sonnet-4-6")
         agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
+        assert agent.llm.model == "anthropic/claude-sonnet-4-6"
+
+
+class TestGatewayMode:
+    """v1.4.0 — `cfg.extra.base_url` triggers gateway mode: model verbatim,
+    OPENHANDS_API_KEY env var, base_url passed through to LLM."""
+
+    def _make_gateway_cfg(self, **kwargs):
+        from _contract import ProviderConfig
+
+        extra = {"base_url": "https://gateway.internal/v1"}
+        extra.update(kwargs.pop("extra", {}))
+        defaults = dict(
+            provider_kind="openhands_sdk",
+            model="gpt-4o",
+            sdk_version="1.22.1",
+            workspace_root="/tmp/ws",
+            tools=[],
+            permissions={},
+            timeout_per_turn_s=300,
+            extra=extra,
+        )
+        defaults.update(kwargs)
+        return ProviderConfig(**defaults)
+
+    def test_gateway_mode_passes_base_url_to_llm(self) -> None:
+        from agent_factory import build_agent
+
+        cfg = self._make_gateway_cfg()
+        agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
+        assert agent.llm.base_url == "https://gateway.internal/v1"
+
+    def test_gateway_mode_skips_resolver_and_uses_model_verbatim(self) -> None:
+        from agent_factory import build_agent
+
+        # Resolver would prefix this with "anthropic/" in legacy mode.
+        # Gateway mode must bypass that and pass the model name through as-is.
+        cfg = self._make_gateway_cfg(model="gpt-4o")
+        agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
+        assert agent.llm.model == "gpt-4o"
+
+    def test_gateway_mode_uses_openhands_api_key_env(self, monkeypatch) -> None:
+        from agent_factory import build_agent
+
+        monkeypatch.setenv("OPENHANDS_API_KEY", "sk-test-gateway-123")
+        # Make sure prefix-routed keys do NOT bleed through.
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        cfg = self._make_gateway_cfg()
+        agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
+        assert agent.llm.api_key == "sk-test-gateway-123"
+
+    def test_gateway_mode_api_key_none_when_env_unset(self, monkeypatch) -> None:
+        from agent_factory import build_agent
+
+        monkeypatch.delenv("OPENHANDS_API_KEY", raising=False)
+        cfg = self._make_gateway_cfg()
+        agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
+        assert agent.llm.api_key is None
+
+    def test_legacy_mode_when_no_base_url(self) -> None:
+        """Sanity: omitting base_url keeps the legacy resolver+prefix path."""
+        from agent_factory import build_agent
+
+        from _contract import ProviderConfig
+
+        cfg = ProviderConfig(
+            provider_kind="openhands_sdk",
+            model="claude-sonnet-4-6",
+            sdk_version="1.22.1",
+            workspace_root="/tmp/ws",
+            tools=[],
+            permissions={},
+            timeout_per_turn_s=300,
+        )
+        agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
+        assert agent.llm.base_url is None
         assert agent.llm.model == "anthropic/claude-sonnet-4-6"
