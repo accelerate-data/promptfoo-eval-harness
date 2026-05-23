@@ -1,0 +1,54 @@
+# promptfooconfig.yaml — Promptfoo file:// option-shape spike
+# THROWAWAY probe config. See README.md.
+#
+# Exercises:
+#   - config: block with top-level string + integer, nested object (2+ levels), mixed-type arrays
+#   - vars.turns with length 1 and length 3
+#   - providerOptions (per-row override)
+#   - per-row vars
+
+description: "Promptfoo file-provider option-shape spike (VD-2174-1B)"
+
+providers:
+  - id: "file://./probe.js"
+    config:
+      provider_kind: openhands_sdk
+      provider_label: probe-openhands
+      model: anthropic/claude-sonnet-4-6
+      top_level_string: "hello from config"
+      top_level_integer: 42
+      nested:
+        level1:
+          level2_string: "deep-value"
+          level2_int: 99
+        sibling_key: "sibling"
+      array_of_strings:
+        - alpha
+        - beta
+        - gamma
+      array_of_objects:
+        - name: tool-a
+          allow: true
+        - name: tool-b
+          allow: false
+
+prompts:
+  - "probe-prompt"
+
+tests:
+  - description: "single-turn: no vars.turns set"
+    vars:
+      prompt: "single turn test message"
+
+  - description: "multi-turn length-1 via vars.turns"
+    vars:
+      turns:
+        - "first and only turn"
+
+  - description: "multi-turn length-3 via vars.turns"
+    vars:
+      turns:
+        - "turn one message"
+        - "turn two message"
+        - "turn three message"
+      extra_var: "per-row-extra"
