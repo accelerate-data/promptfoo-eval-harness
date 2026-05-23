@@ -20,8 +20,11 @@
  * class is instantiated multiple times per Promptfoo row (spec §4.2).
  */
 
+const fs = require('node:fs');
 const os = require('node:os');
+const path = require('node:path');
 const pLimit = require('p-limit');
+const { parse } = require('smol-toml');
 
 // ---------------------------------------------------------------------------
 // OUTER semaphore — caps subprocess spawns / cross-process dir-walk
@@ -111,6 +114,183 @@ function _resetAllLimits() {
 }
 
 // ---------------------------------------------------------------------------
+// Hierarchical per-kind concurrency (Phase 9.5 — VD-2174-12)
+//
+// `acquire(kind?)` always takes the INNER (global) gate first. If `kind` is
+// provided AND `[concurrency.<kind>]` is a positive integer in
+// `config/eval-tiers.toml`, ALSO takes the per-kind gate. Release is in
+// reverse order (per-kind → global) inside the returned `release()`.
+//
+// Invariant: total in-process callApi count ≤ AD_EVALS_MAX_CONCURRENCY,
+// regardless of per-kind caps. Per-kind caps may only further restrict.
+// ---------------------------------------------------------------------------
+
+/** @type {Map<string, import('p-limit').LimitFunction>} */
+const _perKindLimits = new Map();
+
+/** @type {Record<string, number> | null} */
+let _tierConcurrencyCache = null;
+
+/** @type {string | null} */
+let _tierConcurrencyCachePath = null;
+
+/** @type {boolean} */
+let _tierConcurrencyOverride = false;
+
+/**
+ * Reset the per-kind limit map and tier config cache (for testing only).
+ */
+function _resetPerKindLimits() {
+  _perKindLimits.clear();
+  _tierConcurrencyCache = null;
+  _tierConcurrencyCachePath = null;
+  _tierConcurrencyOverride = false;
+}
+
+/**
+ * Override the tier concurrency cache directly without reading TOML (for
+ * testing only). Pass `null` to clear the override and re-enable disk reads.
+ *
+ * @param {Record<string, number> | null} caps
+ */
+function _setTierConcurrencyForTesting(caps) {
+  if (caps === null) {
+    _tierConcurrencyCache = null;
+    _tierConcurrencyCachePath = null;
+    _tierConcurrencyOverride = false;
+  } else {
+    _tierConcurrencyCache = { ...caps };
+    _tierConcurrencyCachePath = '<test-override>';
+    _tierConcurrencyOverride = true;
+  }
+}
+
+/**
+ * Read `[concurrency]` table from `config/eval-tiers.toml`. Returns
+ * `{ [kind]: cap }` where `cap` is a positive integer; invalid entries are
+ * silently dropped. Returns `{}` on missing file or missing table.
+ *
+ * Result is memoized per configPath. Pass a different path to bust the cache
+ * for testing.
+ *
+ * @param {string} [configPath]
+ * @returns {Record<string, number>}
+ */
+function _loadTierConcurrencyConfig(configPath) {
+  if (_tierConcurrencyOverride && _tierConcurrencyCache !== null) {
+    return _tierConcurrencyCache;
+  }
+  const resolved = configPath || _defaultTierConfigPath();
+  if (_tierConcurrencyCache !== null && _tierConcurrencyCachePath === resolved) {
+    return _tierConcurrencyCache;
+  }
+
+  let raw;
+  try {
+    raw = fs.readFileSync(resolved, 'utf8');
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      _tierConcurrencyCache = {};
+      _tierConcurrencyCachePath = resolved;
+      return _tierConcurrencyCache;
+    }
+    throw err;
+  }
+
+  let parsed;
+  try {
+    parsed = parse(raw);
+  } catch {
+    _tierConcurrencyCache = {};
+    _tierConcurrencyCachePath = resolved;
+    return _tierConcurrencyCache;
+  }
+
+  const table = parsed && parsed.concurrency;
+  const result = {};
+  if (table && typeof table === 'object' && !Array.isArray(table)) {
+    for (const [kind, value] of Object.entries(table)) {
+      if (typeof value === 'bigint') {
+        const asNumber = Number(value);
+        if (Number.isInteger(asNumber) && asNumber > 0) result[kind] = asNumber;
+      } else if (Number.isInteger(value) && value > 0) {
+        result[kind] = value;
+      }
+    }
+  }
+
+  _tierConcurrencyCache = result;
+  _tierConcurrencyCachePath = resolved;
+  return _tierConcurrencyCache;
+}
+
+function _defaultTierConfigPath() {
+  // Lazy import to avoid a circular dep at module load time.
+  // `roots` is small and side-effect-free; this is fine.
+  const { EVAL_ROOT } = require('./roots');
+  return path.join(EVAL_ROOT, 'config', 'eval-tiers.toml');
+}
+
+function _getPerKindLimit(kind, cap) {
+  let limit = _perKindLimits.get(kind);
+  if (!limit) {
+    limit = pLimit(cap);
+    _perKindLimits.set(kind, limit);
+  }
+  return limit;
+}
+
+/**
+ * Acquire a hold on the bridge concurrency gates. Returns an object with a
+ * `release()` function the caller must invoke when work is done.
+ *
+ * @param {string} [kind] - Optional provider kind for nested per-kind gate.
+ * @returns {Promise<{ release: () => void }>}
+ */
+async function acquire(kind) {
+  const globalRelease = await _acquireSlot(getGlobalLimit());
+  let perKindRelease = null;
+
+  if (kind) {
+    const caps = _loadTierConcurrencyConfig();
+    const cap = caps[kind];
+    if (Number.isInteger(cap) && cap > 0) {
+      perKindRelease = await _acquireSlot(_getPerKindLimit(kind, cap));
+    }
+  }
+
+  return {
+    release() {
+      try {
+        if (perKindRelease) perKindRelease();
+      } finally {
+        globalRelease();
+      }
+    },
+  };
+}
+
+/**
+ * Hold-and-release adapter over a p-limit instance. Returns a release fn the
+ * caller invokes when done. The slot is held for the lifetime of the
+ * returned release fn; calling it frees the slot.
+ *
+ * @param {import('p-limit').LimitFunction} limit
+ * @returns {Promise<() => void>}
+ */
+function _acquireSlot(limit) {
+  return new Promise((resolveAcquired, rejectAcquired) => {
+    limit(() =>
+      new Promise((resolveHeld) => {
+        // Inside the limit slot now. Hand the caller a release function that
+        // resolves the held promise (which frees the slot in p-limit).
+        resolveAcquired(() => resolveHeld());
+      }),
+    ).catch(rejectAcquired);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Named concurrency gate factory (per-call inner gates)
 // ---------------------------------------------------------------------------
 
@@ -168,4 +348,9 @@ module.exports = {
   // Per-call gate factory
   makeConcurrencyGate,
   spawn,
+  // Hierarchical per-kind (Phase 9.5)
+  acquire,
+  _loadTierConcurrencyConfig,
+  _resetPerKindLimits,
+  _setTierConcurrencyForTesting,
 };
