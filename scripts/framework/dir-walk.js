@@ -72,13 +72,21 @@ function spawnScenario(scenarioDir, env, harnessRoot) {
   );
   const startMs = Date.now();
 
+  // Isolate Promptfoo's SQLite state DB per-scenario so parallel runs don't race
+  // on shared `~/.promptfoo/promptfoo.db` schema init. Each scenario gets its
+  // own PROMPTFOO_CONFIG_DIR; cleaned up best-effort after the child exits.
+  const promptfooConfigDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), `ad-evals-promptfoo-${name}-`),
+  );
+  const childEnv = { ...env, PROMPTFOO_CONFIG_DIR: promptfooConfigDir };
+
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
 
     const child = spawn(process.execPath, [promptfooEntrypoint, 'eval', '--no-cache', '-c', configPath], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env,
+      env: childEnv,
       cwd: harnessRoot,
     });
 
@@ -90,9 +98,18 @@ function spawnScenario(scenarioDir, env, harnessRoot) {
       stderr += chunk.toString();
     });
 
+    const settle = (result) => {
+      try {
+        fs.rmSync(promptfooConfigDir, { recursive: true, force: true });
+      } catch {
+        /* best-effort cleanup */
+      }
+      resolve(result);
+    };
+
     child.on('close', (code, signal) => {
       const exitCode = code !== null ? code : (signal ? 1 : 1);
-      resolve({
+      settle({
         name,
         exitCode,
         stdout,
@@ -102,7 +119,7 @@ function spawnScenario(scenarioDir, env, harnessRoot) {
     });
 
     child.on('error', (err) => {
-      resolve({
+      settle({
         name,
         exitCode: 1,
         stdout,

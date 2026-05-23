@@ -42,9 +42,9 @@ jobs:
         env:
           OPENCODE_MOCK_MODE: '1'
           PYTHONPATH: ${{ github.workspace }}/tests/_mock_openhands_sdk
-          # Outer concurrency: 1 on CI to avoid SQLite contention between
-          # parallel Promptfoo child processes sharing the same state DB.
-          AD_EVALS_OUTER_CONCURRENCY: '1'
+          # Outer concurrency intentionally unset — dir-walk gives each scenario
+          # its own PROMPTFOO_CONFIG_DIR, so the SQLite state DB is isolated and
+          # parallel runs are safe (spec §5.3 multi-scenario parallelism).
         run: |
           source $HOME/.cargo/env 2>/dev/null || true
           node bin/ad-evals.js run tests/harness-scenarios/packages
