@@ -10,6 +10,8 @@ const { buildHarnessEnv } = require('../scripts/framework/environment');
 const { discoverPackageConfigs } = require('../scripts/framework/package-discovery');
 const { resolveHarnessPaths } = require('../scripts/framework/paths');
 const { main: runPromptfooWithGuard } = require('../scripts/framework/run-promptfoo-with-guard');
+const { validate } = require('../scripts/framework/validate-package-config');
+const makeBridge = require('../scripts/framework/_node_bridge.js');
 
 function bootstrapEvalRoot() {
   if (process.env.AD_EVALS_ROOT) {
@@ -49,6 +51,74 @@ function ensureDepsInstalled() {
     const lockHash = crypto.createHash('sha256').update(fs.readFileSync(lockfile)).digest('hex');
     fs.writeFileSync(stamp, lockHash);
   }
+}
+
+/**
+ * Commands that trigger Promptfoo evaluation and therefore require
+ * tier config validation before dispatch.
+ */
+const EVAL_COMMANDS = new Set(['smoke', 'regression', 'run']);
+
+/**
+ * Print a validation error table to stderr and return exit code 2.
+ *
+ * @param {Array<{path, expected, received, message}>} errors
+ * @param {object} logger
+ * @returns {number} exit code 2
+ */
+function printValidationErrors(errors, logger) {
+  logger.error('Package config validation failed:\n');
+  const colPath = Math.max(4, ...errors.map((e) => e.path.length));
+  const header = `  ${'PATH'.padEnd(colPath)}  MESSAGE`;
+  logger.error(header);
+  logger.error('  ' + '-'.repeat(header.length - 2));
+  for (const e of errors) {
+    logger.error(`  ${e.path.padEnd(colPath)}  ${e.message}`);
+  }
+  logger.error('');
+  return 2;
+}
+
+/**
+ * Attempt to load and validate the tier config from evalRoot.
+ * Returns null if no config found (graceful skip for new/empty repos).
+ * Returns exit code 2 on validation failure, 0 on success.
+ *
+ * @param {string} evalRoot
+ * @param {object} logger
+ * @returns {number|null} exit code or null to continue
+ */
+function runTierConfigValidation(evalRoot, logger) {
+  const { parseTierConfig } = require('../scripts/framework/eval-tier-config');
+  const { parse } = require('smol-toml');
+
+  const configPath = path.join(evalRoot, 'config', 'eval-tiers.toml');
+  if (!fs.existsSync(configPath)) {
+    return null; // no config to validate — graceful skip
+  }
+
+  let raw;
+  try {
+    raw = parse(fs.readFileSync(configPath, 'utf8'));
+  } catch (e) {
+    logger.error(`Failed to parse eval-tiers.toml: ${e.message}`);
+    return 2;
+  }
+
+  let normalized;
+  try {
+    normalized = parseTierConfig(raw, configPath);
+  } catch (e) {
+    logger.error(`Tier config shape error: ${e.message}`);
+    return 2;
+  }
+
+  const kindRegistry = makeBridge._KIND_REGISTRY;
+  const result = validate(normalized, { kindRegistry });
+  if (!result.ok) {
+    return printValidationErrors(result.errors, logger);
+  }
+  return null; // validation passed — continue
 }
 
 function buildPromptfooArgs({ command, rest = [], packageConfigs = [] }) {
@@ -147,6 +217,15 @@ function run(
     return result.status ?? 1;
   }
 
+  // Validate tier config before dispatching to Promptfoo (B.11).
+  // Only runs for eval commands; skips passthrough and informational commands.
+  if (EVAL_COMMANDS.has(command)) {
+    const validationResult = runTierConfigValidation(paths.evalRoot, logger);
+    if (validationResult !== null) {
+      return validationResult;
+    }
+  }
+
   const promptfooArgs = buildPromptfooArgs({
     command,
     rest,
@@ -184,4 +263,6 @@ module.exports = {
   buildPromptfooArgs,
   prepareEnvironment,
   run,
+  runTierConfigValidation,
+  printValidationErrors,
 };
