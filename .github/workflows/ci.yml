@@ -30,6 +30,10 @@ jobs:
         run: uv sync --frozen
       - run: npm ci --no-audit --no-fund
       - run: npm test
+      - name: Benchmark gates
+        run: npm run bench
+        # BENCH_OVERRIDE_REASON is intentionally NOT set in CI.
+        # A failing budget MUST fail the build.
       - name: Lint markdown
         run: npx --no markdownlint-cli '**/*.md' --ignore node_modules
       - name: Verify init script is syntactically valid

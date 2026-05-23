@@ -1,0 +1,36 @@
+# Benchmark budget configuration for the eval harness (spec §8.5 / §2.5).
+#
+# [spawn_cost]
+#   p95_ms — cold-spawn p95 latency budget in milliseconds.
+#
+# Rationale for the chosen values:
+#   The mock adapter (tests/_mock_provider/provider.py) imports NO external SDK,
+#   so cold spawn cost is essentially Python interpreter start + our small module
+#   import tree. On a developer laptop this is ~50-150 ms. We set the budget at
+#   300 ms to give 2× headroom for slower CI runners without being so loose that
+#   real regressions (e.g. accidentally importing a heavy SDK at startup) go
+#   undetected.
+#
+#   The per-turn round-trip budget (100 ms) is similarly generous for a mock
+#   provider that does no I/O — if a turn takes > 100 ms with the mock, something
+#   is serializing in the bridge or IPC layer and should be investigated.
+#
+#   The REAL OpenHands SDK cold-spawn budget (~3-4 s for cold uv cache, ~800 ms
+#   warm) will be set in phase 06 once the SDK provider is implemented and
+#   measured on a representative machine. Phase 03 budgets are for the mock only.
+#
+# Escape valve:
+#   Set BENCH_OVERRIDE_REASON=<reason> to bypass the gate locally (e.g. when
+#   debugging on a resource-constrained machine). CI never sets this variable —
+#   a failing budget MUST fail the build.
+
+[spawn_cost]
+# p95 cold-spawn latency budget for the mock adapter (no SDK import). ms.
+p95_ms = 300
+# p95 per-turn round-trip budget after init. ms.
+turn_p95_ms = 100
+
+[throughput]
+# Minimum speedup ratio at outer_concurrency=2 relative to outer_concurrency=1.
+# Below this threshold the OUTER semaphore is likely broken or spawn is serializing.
+min_speedup_at_2 = 1.4

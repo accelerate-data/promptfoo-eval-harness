@@ -1,0 +1,4 @@
+{
+  "iterations": 20,
+  "outer_concurrency_values": [1, 2, 4]
+}

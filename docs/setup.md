@@ -180,3 +180,52 @@ cd tests/evals && npm run eval:regression
 | No `[smoke]` test | Add a test whose description starts with `[smoke]` |
 | `providers` block conflict | Remove `providers` from your package config — the framework injects it |
 | CI: `git rev-parse` fails | Set `AD_EVALS_ROOT` to the absolute path of `tests/evals/` |
+
+---
+
+## Benchmarks
+
+Two performance gates ship with the harness. Both run as part of CI (`npm run bench`)
+and can be run locally at any time.
+
+### `npm run bench:spawn-cost`
+
+Spawns the Python adapter (mock provider, no SDK import) 20 times in series and
+measures cold-spawn latency (start to `init_ack`). Computes p50/p95/p99.
+
+Budget: `config/bench-budget.toml` → `[spawn_cost] p95_ms` (default 300 ms for the
+mock adapter). Phase 06 will tighten this budget for the real OpenHands SDK provider
+once cold-import cost is measured on a representative machine.
+
+Exit 1 if p95 exceeds budget. Prints a summary line to stdout:
+
+```text
+spawn_cost: n=20 p50=26 p95=28 p99=57 budget=300 verdict=PASS
+```
+
+### `npm run bench:throughput`
+
+Runs `bench/parallel-throughput/config.json → iterations` full mock-adapter calls at
+each value of `outer_concurrency_values` using a `p-limit` gate. Computes speedup
+relative to `concurrency=1`.
+
+Soft gate: speedup at `outer_concurrency=2` must be ≥
+`config/bench-budget.toml → [throughput] min_speedup_at_2` (default 1.4×). A value
+below 1.4× signals the OUTER concurrency limiter is broken or spawns are serializing.
+
+Exit 1 if speedup is below threshold.
+
+### Bench gate override
+
+Set `BENCH_OVERRIDE_REASON=<free-text reason>` to bypass both gates and exit 0,
+regardless of measurement:
+
+```bash
+BENCH_OVERRIDE_REASON='diagnosing slow machine' npm run bench
+```
+
+**CI never sets `BENCH_OVERRIDE_REASON`** — a failing budget MUST fail the build.
+Use the override only when diagnosing locally on a resource-constrained machine or
+when chasing a real infrastructure issue. PRs touching latency-sensitive paths
+(the adapter spawn path, IPC framing, or the concurrency primitive) must NOT use
+this escape valve.

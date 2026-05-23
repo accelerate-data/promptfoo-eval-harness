@@ -26,7 +26,10 @@
   ],
   "scripts": {
     "test": "node --test scripts/*.test.js scripts/framework/*.test.js",
-    "lint:md": "markdownlint '**/*.md' --ignore-path .markdownlintignore"
+    "lint:md": "markdownlint '**/*.md' --ignore-path .markdownlintignore",
+    "bench:spawn-cost": "node bench/spawn-cost.js",
+    "bench:throughput": "node bench/parallel-throughput/driver.js",
+    "bench": "npm run bench:spawn-cost && npm run bench:throughput"
   },
   "dependencies": {
     "js-yaml": "^4.1.1",
