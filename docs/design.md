@@ -255,6 +255,12 @@ Layer 4 nightly coverage lives at `tests/harness-scenarios/packages/claude-mock-
 
 `init(cfg)` calls `sdk.createOpencodeServer({ hostname: '127.0.0.1', port: 0 })` to boot an ephemeral local OpenCode server (random unprivileged port), then `sdk.createOpencodeClient({ baseUrl: server.url })`, then probes readiness via `client.session.list()` until success or `STARTUP_TIMEOUT_MS`. Each `turn()` dispatches one `client.session.prompt({ path: { id }, body: { parts: [{ type: 'text', text }], agent, model } })` against the session created in `init` so multi-turn cases share history. `shutdown()` deletes the session best-effort, then calls `server.close()` inside a `Promise.race` against a 5-second timeout with `clearTimeout` in `finally` to avoid event-loop hangs.
 
+Auto-start is the only supported path: callers should not spawn `opencode serve` ahead of time. Each `provider_kind=opencode_sdk` provider instance owns exactly one server with a dynamic port (Phase 9.5 caches one instance per run; parallel cases share that one server via per-case `session.create`).
+
+### Response shape (SDK v1.15.10)
+
+Every `client.session.*` call returns `{data, request, response}` on success or `{error, request, response}` on failure. The provider reads `createResp.data.id` for the session id, `promptResp.data.parts` for the assistant parts, and `final.data.{cost, tokens, title}` in finalize. `session.prompt` requires `body.model` to be a `{providerID, modelID}` object — harness configs carry the model as a `"providerID/modelID"` string and `_parseModel` in `provider.js` splits on the first `/` before sending. (v1.3.2 hotfix; legacy `info.id` / `info.parts` fallbacks are retained for the test mock and any future shape regressions.)
+
 ### Agent allowlist
 
 `opencode_agent` from `cfg.extra` must be one of `{ build, plan, general }` (`SUPPORTED_AGENTS` in `provider.js`). Anything else raises `UNSUPPORTED_AGENT`. Default is `build` if omitted. Tool catalogue and permissions are owned by the OpenCode agent definition on the server side — the harness does not duplicate them here (unlike `claude_agent_sdk` where the harness owns tool gating).

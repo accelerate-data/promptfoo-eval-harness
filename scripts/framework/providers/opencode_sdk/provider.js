@@ -22,6 +22,14 @@
  * intercepts the specifier and returns `tests/_mock_opencode_sdk/sdk.mjs`).
  * No `createOpencodeServer` fallback to `npx opencode serve` is needed on
  * SDK v1.15.10 — the helper exists in `@opencode-ai/sdk/server`.
+ *
+ * Response shape (SDK v1.15.10): every `client.session.*` call returns
+ * `{data, request, response}` on success or `{error, request, response}` on
+ * failure. The id from session.create is at `data.id`; prompt parts are at
+ * `data.parts`; finalize fields (cost/tokens/title) are at `data` directly.
+ * `session.prompt` requires `body.model` to be an object
+ * `{providerID, modelID}` — harness config carries it as a "p/m" string and
+ * the provider splits on the first `/` before sending. (v1.3.2 hotfix.)
  */
 
 const STARTUP_TIMEOUT_MS = 5000;
@@ -41,6 +49,25 @@ function _resolveAgent(cfg) {
     throw _err('UNSUPPORTED_AGENT', `opencode_sdk agent ${JSON.stringify(agent)} not in {${[...SUPPORTED_AGENTS].join(',')}}`, false);
   }
   return agent;
+}
+
+/**
+ * Parse the harness `model` field into the {providerID, modelID} shape
+ * required by `@opencode-ai/sdk@1.15.10` session.prompt. Accepts either an
+ * already-parsed object or a "providerID/modelID" string. Returns undefined
+ * when no model is configured so the SDK can apply its default.
+ */
+function _parseModel(m) {
+  if (!m) return undefined;
+  if (typeof m === 'object' && m.providerID && m.modelID) return m;
+  if (typeof m !== 'string') {
+    throw _err('validation', `opencode_sdk model must be a "<providerID>/<modelID>" string or {providerID,modelID} object; got ${typeof m}`, false);
+  }
+  const slash = m.indexOf('/');
+  if (slash <= 0 || slash === m.length - 1) {
+    throw _err('validation', `opencode_sdk model ${JSON.stringify(m)} missing "/" separator; expected "<providerID>/<modelID>"`, false);
+  }
+  return { providerID: m.slice(0, slash), modelID: m.slice(slash + 1) };
 }
 
 async function _waitReady(client, timeoutMs) {
@@ -156,21 +183,31 @@ function create() {
             body: { title: 'harness-session' },
             query: session.workspaceDir ? { directory: session.workspaceDir } : {},
           });
-          const id = createResp && (createResp.info?.id || createResp.id);
+          const id = createResp && (createResp.data?.id || createResp.info?.id || createResp.id);
           if (!id) throw _err('sdk_error', 'opencode session.create returned no id', false);
           session.sessionId = id;
         }
 
+        const modelPayload = _parseModel(session.model);
         const resp = await session.client.session.prompt({
           path: { id: session.sessionId },
           body: {
             agent: session.agent,
-            model: session.model || undefined,
+            ...(modelPayload ? { model: modelPayload } : {}),
             parts: [{ type: 'text', text: input }],
           },
         });
 
-        const parts = (resp && (resp.parts || (resp.info && resp.info.parts))) || [];
+        if (resp && resp.error) {
+          const sdkErr = resp.error;
+          throw _err(
+            'sdk_error',
+            `opencode session.prompt failed: ${(sdkErr.data && sdkErr.data.message) || sdkErr.name || 'unknown'}`,
+            false,
+          );
+        }
+
+        const parts = (resp && (resp.data?.parts || resp.parts || (resp.info && resp.info.parts))) || [];
         const { text, toolCalls } = _extract(parts);
         return { output: text, tool_calls: toolCalls };
       } catch (e) {
@@ -185,7 +222,9 @@ function create() {
       try {
         const final = await session.client.session.get({ path: { id: session.sessionId } });
         session.finalState = final;
-        const info = (final && final.info) || final || {};
+        // SDK v1.15.10 returns {data: {cost, tokens, title, ...}, request, response}.
+        // Mock <=v1.3.1 still returns {info: {...}} — keep both readable.
+        const info = (final && (final.data || final.info)) || final || {};
         const cost = typeof info.cost === 'number' ? info.cost : null;
         const tokens = (info.tokens && typeof info.tokens === 'object') ? info.tokens : {};
         return {

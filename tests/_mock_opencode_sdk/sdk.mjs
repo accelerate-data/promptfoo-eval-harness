@@ -64,13 +64,20 @@ export function createOpencodeClient(_config = {}) {
     err.status = 401;
     throw err;
   }
+  // v1.3.2 hotfix: real SDK v1.15.10 wraps every session.* response in
+  // `{data, request, response}` (or `{error, request, response}` on failure)
+  // and requires `session.prompt({body: {model}})` to be a `{providerID, modelID}`
+  // object — not a "providerID/modelID" string. The mock now mirrors that
+  // wire shape so the provider's reader paths and model parser stay honest.
+  const _wrap = (data) => ({ data, request: {}, response: { status: 200 } });
+
   return {
     session: {
       async list(_args = {}) {
         if (scenario === 'startup_timeout') {
           throw Object.assign(new Error('mock server not ready'), { status: 503 });
         }
-        return { items: [] };
+        return _wrap({ items: [] });
       },
       async create(args = {}) {
         const id = `mock-session-${_nextId++}`;
@@ -85,7 +92,7 @@ export function createOpencodeClient(_config = {}) {
           cost: 0,
           tokens: { input: 0, output: 0 },
         });
-        return { info: { id, title } };
+        return _wrap({ id, title, directory: directory || null });
       },
       async get(args = {}) {
         const id = args.path && args.path.id;
@@ -95,19 +102,17 @@ export function createOpencodeClient(_config = {}) {
           err.status = 404;
           throw err;
         }
-        return {
-          info: {
-            id: state.id,
-            title: state.title,
-            cost: state.cost,
-            tokens: { ...state.tokens },
-          },
-        };
+        return _wrap({
+          id: state.id,
+          title: state.title,
+          cost: state.cost,
+          tokens: { ...state.tokens },
+        });
       },
       async delete(args = {}) {
         const id = args.path && args.path.id;
         _sessions.delete(id);
-        return { ok: true };
+        return _wrap({ ok: true });
       },
       async prompt(args = {}) {
         const id = args.path && args.path.id;
@@ -118,6 +123,15 @@ export function createOpencodeClient(_config = {}) {
           throw err;
         }
         const body = args.body || {};
+        if (body.model !== undefined) {
+          if (typeof body.model === 'string' || !body.model.providerID || !body.model.modelID) {
+            return {
+              error: { name: 'BadRequest', data: { message: `Expected {providerID,modelID} object, got ${JSON.stringify(body.model)}`, kind: 'Payload' } },
+              request: {},
+              response: { status: 400 },
+            };
+          }
+        }
         const parts = Array.isArray(body.parts) ? body.parts : [];
         const userText = parts.filter((p) => p && p.type === 'text').map((p) => p.text || '').join('\n');
         state.turns.push(userText);
@@ -125,16 +139,18 @@ export function createOpencodeClient(_config = {}) {
         state.cost += 0.0001;
         state.tokens.input += Math.max(1, userText.split(/\s+/).filter(Boolean).length);
         state.tokens.output += Math.max(1, text.split(/\s+/).filter(Boolean).length);
-        return {
+        return _wrap({
           info: {
             id: `mock-msg-${_nextId++}`,
             sessionID: id,
             role: 'assistant',
           },
           parts: [
+            { type: 'step-start' },
             { type: 'text', text, messageID: `mock-msg-${_nextId}`, sessionID: id },
+            { type: 'step-finish' },
           ],
-        };
+        });
       },
     },
   };
