@@ -4,6 +4,31 @@ Shared Promptfoo + OpenCode eval harness. Owns model/tier policy, provider
 wiring, package discovery, Promptfoo state export, and artifact guards.
 Consumers own eval YAML, prompts, fixtures, and assertions.
 
+## Providers
+
+All providers route through the single Promptfoo bridge
+`file://scripts/framework/_node_bridge.js`. Set `provider_kind` in the
+provider `config:` block to select a provider.
+
+| `provider_kind` | Status | Model alias examples | Notes |
+| --- | --- | --- | --- |
+| `opencode_cli` | stable | `opencode-mock`, `opencode-anthropic` | In-process; requires `opencode` binary on `PATH`. |
+| `openhands_sdk` | stable | `mock/openhands-mock`, `openhands/anthropic-claude-3-5-sonnet` | Subprocess via `uv run --with openhands-sdk==1.22.1`; supports multi-turn. |
+| `claude_agent_sdk` | planned | — | Phase 2 (v1.1.0). |
+| `opencode_sdk` | planned | — | Phase 3 (v1.2.0). |
+| `codex_sdk` | planned | — | Phase 4 (v1.3.0). |
+
+## Scenarios
+
+Framework-owned mock-mode scenarios under
+[`tests/harness-scenarios/packages/`](tests/harness-scenarios/packages/):
+
+| Scenario | Description |
+| --- | --- |
+| [`minimal-smoke`](tests/harness-scenarios/packages/minimal-smoke/README.md) | Single-turn `opencode_cli` smoke test; no live API key required. |
+| [`opencode-cli-compatibility`](tests/harness-scenarios/packages/opencode-cli-compatibility/README.md) | Layer 4 regression locking all five §7.4 `opencode_cli` behaviors; 3 cases. |
+| [`openhands-mock-multi-turn`](tests/harness-scenarios/packages/openhands-mock-multi-turn/README.md) | 3-turn `openhands_sdk` via mock SDK; validates NDJSON IPC multi-turn path. |
+
 ## Quick Start
 
 Bootstrap a new repo:
@@ -17,7 +42,13 @@ This scaffolds `tests/evals/` with `package.json`, `opencode.json`,
 dependencies, and adds a Dependabot entry to `.github/dependabot.yml`
 so the repo receives PRs when a new version is released.
 
-Verify the install:
+Smoke-test the install immediately (no live API key needed):
+
+```bash
+OPENCODE_MOCK_MODE=1 npx ad-evals run tests/harness-scenarios/packages/minimal-smoke
+```
+
+Verify the full install:
 
 ```bash
 cd tests/evals
@@ -29,6 +60,17 @@ npm run eval:smoke           # smoke across all packages
 
 Dependencies are installed automatically on the first `ad-evals` run
 and re-installed whenever `package-lock.json` changes.
+
+### Migration from v0
+
+v0 tier configs (no `provider_kind` field) are accepted at runtime but deprecated.
+Run the in-place migration to avoid a v1.1.0 breaking change:
+
+```bash
+npx --package @accelerate-data/promptfoo-eval-harness eval-harness-init --upgrade --migrate-from-v0
+```
+
+Full guide: [`docs/migration-v0-to-v1.md`](docs/migration-v0-to-v1.md)
 
 ## Usage
 
