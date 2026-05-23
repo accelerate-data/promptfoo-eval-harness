@@ -4,7 +4,7 @@ Framework-shipped end-to-end scenarios for the promptfoo eval harness.
 
 ## Layout
 
-```
+```text
 tests/harness-scenarios/packages/
 ├── index.json                    # Scenario registry (source of truth)
 ├── minimal-smoke/                # 1-turn opencode_cli smoke test
@@ -16,7 +16,7 @@ tests/harness-scenarios/packages/
 
 Every scenario MUST follow this layout:
 
-```
+```text
 packages/<name>/
 ├── promptfooconfig.json   # REQUIRED — Promptfoo v1 config
 ├── prompts/               # REQUIRED — prompt template files
@@ -29,7 +29,7 @@ packages/<name>/
 Every entry in `index.json` MUST have these fields and MUST be kept in sync when adding or removing scenarios:
 
 | Field | Type | Description |
-|---|---|---|
+| --- | --- | --- |
 | `name` | string | Unique scenario name, matches directory name |
 | `path` | string | Path relative to repo root |
 | `provider_kinds` | string[] | Provider kinds used (`opencode_cli`, `openhands_sdk`) |
