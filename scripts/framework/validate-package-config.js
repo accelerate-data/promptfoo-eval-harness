@@ -13,9 +13,12 @@
  *
  * Rules (spec §1.6 + §4.3):
  *   1. provider_kind ∈ Object.keys(kindRegistry).
- *      Reserved-but-rejected: claude_agent_sdk, opencode_sdk, codex_sdk →
+ *      Reserved-but-rejected: codex_sdk (Phase 12 / v1.3.0) →
  *      exact message "provider_kind '<name>' is reserved for a future Phase
  *      and not registered in v1.0.0".
+ *      Previously-reserved kinds claude_agent_sdk (Phase 10 / v1.1.0) and
+ *      opencode_sdk (Phase 11 / v1.2.0) are now live and validated through
+ *      the normal kindRegistry path.
  *   2. SDK kinds (mode === 'subprocess') require a non-empty model string.
  *      If model-resolver is available (scripts/framework/model-resolver.js),
  *      the model is also validated through it. In v1.0.0 model-resolver is
@@ -34,7 +37,7 @@ const path = require('node:path');
 // ---------------------------------------------------------------------------
 // Reserved kinds — registered in future phases, rejected in v1.0.0
 // ---------------------------------------------------------------------------
-const RESERVED_KINDS = new Set(['claude_agent_sdk', 'opencode_sdk', 'codex_sdk']);
+const RESERVED_KINDS = new Set(['codex_sdk']);
 
 // ---------------------------------------------------------------------------
 // Model resolver — optional (Phase 6). Loaded once, null if not available.
@@ -116,7 +119,7 @@ function _validateProvider(provider, basePath, kindRegistry, errors) {
     errors.push(_err(kindPath,
       `one of [${Object.keys(kindRegistry).join(', ')}]`,
       kind,
-      `provider_kind '${kind}' is reserved for a future Phase and not registered in v1.0.0`,
+      `provider_kind '${kind}' is reserved for a future Phase and not yet registered in this harness release`,
     ));
     return;
   }

@@ -197,14 +197,14 @@ VD-2174-9 lands the first of the three Node-SDK-flavoured providers that piggyba
 | `opencode_cli` | stable | inproc (specialised) | `opencode-mock`, `opencode-anthropic` | n/a (CLI-managed) | n/a |
 | `openhands_sdk` | stable | subprocess (`uv run --with openhands-sdk==1.22.1`) | `mock/openhands-mock`, `openhands/anthropic-claude-3-5-sonnet` | per agent profile | per OpenHands `MCPConfig` |
 | `claude_agent_sdk` | stable | subprocess (`uv run --with claude-agent-sdk==0.2.85`) | `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-haiku-4-5` (aliases: `opus`, `sonnet`, `haiku`) | `Read`, `Write`, `Edit`, `Glob`, `Grep` | `Bash` requires `permissions.allow_shell=true`; `WebSearch`, `WebFetch`, `AskUserQuestion` require `permissions.allow_web=true` |
-| `opencode_sdk` | planned (Phase 11 / v1.2.0) | inproc | — | — | — |
+| `opencode_sdk` | stable | inproc (`@opencode-ai/sdk@1.15.10`, requires Node ≥ 20) | `anthropic/claude-sonnet-4-6`, `openai/gpt-4o` (any model the OpenCode server accepts) | per OpenCode agent definition (`build` / `plan` / `general`) | per OpenCode agent definition |
 | `codex_sdk` | planned (Phase 12 / v1.3.0) | inproc | — | — | — |
 
 ### Subprocess shape
 
 The bridge dispatches `provider_kind=claude_agent_sdk` via `_buildSpawnSpec` which emits:
 
-```
+```text
 uv run --python 3.12 --with claude-agent-sdk==<version> \
   python -m scripts.framework.providers._python_adapter --kind=claude_agent_sdk
 ```
@@ -246,6 +246,35 @@ The provider maps SDK exceptions onto the contract codes:
 ### Mock-mode scenario
 
 Layer 4 nightly coverage lives at `tests/harness-scenarios/packages/claude-mock-multi-turn/`. `tests/_mock_claude_agent_sdk/sitecustomize.py` monkey-patches `sys.modules["claude_agent_sdk"]` with the deterministic mock from `sdk.py` so the scenario validates the full bridge → adapter → provider → mock-SDK round-trip without a live `ANTHROPIC_API_KEY`. `.github/workflows/nightly-scenarios.yml` pre-warms the real wheel into uv's cache so the mock-mode run does not pay first-fetch latency.
+
+## In-proc Node provider — `opencode_sdk`
+
+`provider_kind=opencode_sdk` lives at `scripts/framework/providers/opencode_sdk/provider.js` and is dispatched in-proc through Phase 9.5's `_dispatchInproc` (no subprocess, no NDJSON). The bridge's `KIND_REGISTRY` entry resolves to that module path so a single Promptfoo `file://` provider face handles all four kinds uniformly.
+
+### Server lifecycle
+
+`init(cfg)` calls `sdk.createOpencodeServer({ hostname: '127.0.0.1', port: 0 })` to boot an ephemeral local OpenCode server (random unprivileged port), then `sdk.createOpencodeClient({ baseUrl: server.url })`, then probes readiness via `client.session.list()` until success or `STARTUP_TIMEOUT_MS`. Each `turn()` dispatches one `client.session.prompt({ path: { id }, body: { parts: [{ type: 'text', text }], agent, model } })` against the session created in `init` so multi-turn cases share history. `shutdown()` deletes the session best-effort, then calls `server.close()` inside a `Promise.race` against a 5-second timeout with `clearTimeout` in `finally` to avoid event-loop hangs.
+
+### Agent allowlist
+
+`opencode_agent` from `cfg.extra` must be one of `{ build, plan, general }` (`SUPPORTED_AGENTS` in `provider.js`). Anything else raises `UNSUPPORTED_AGENT`. Default is `build` if omitted. Tool catalogue and permissions are owned by the OpenCode agent definition on the server side — the harness does not duplicate them here (unlike `claude_agent_sdk` where the harness owns tool gating).
+
+### Error taxonomy (opencode_sdk)
+
+The provider's `_mapError` collapses SDK exceptions onto the contract codes:
+
+| SDK signal | Contract code | Retryable |
+| --- | --- | --- |
+| HTTP 400 / `e.status === 400` | `validation` | no |
+| HTTP 401 / 403 or `/auth/i` in message | `AUTH` | no |
+| HTTP 429 | `rate_limit` | yes |
+| HTTP 5xx | `sdk_error` | yes |
+| `createOpencodeServer` boot failure | `STARTUP_TIMEOUT` | no |
+| Anything else | `sdk_error` | no |
+
+### Mock-mode scenario (opencode_sdk)
+
+Layer 4 nightly coverage lives at `tests/harness-scenarios/packages/opencode-sdk-mock-multi-turn/`. `tests/_mock_opencode_sdk/register.mjs` uses ESM `Module.register()` to intercept `import('@opencode-ai/sdk')` for the provider, swapping it for the deterministic mock at `tests/_mock_opencode_sdk/sdk.mjs`. The nightly workflow scopes `NODE_OPTIONS=--import .../register.mjs` to a dedicated step so the loader hook never leaks into the other scenarios; that step runs the scenario via `node bin/ad-evals.js run tests/harness-scenarios/packages/opencode-sdk-mock-multi-turn`, which routes through `dir-walk.spawnScenario` (single-scenario bypass of `EVAL_ROOT`) since the scenario lives in the framework-owned tree.
 
 ## Open Questions
 

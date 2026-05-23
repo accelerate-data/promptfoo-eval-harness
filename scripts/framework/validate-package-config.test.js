@@ -12,10 +12,14 @@ function loadFixture(name) {
   return require(path.join(FIXTURES_DIR, name));
 }
 
-// KIND_REGISTRY as it exists in v1.0.0 (mirrored from _node_bridge.js)
+// KIND_REGISTRY mirrored from _node_bridge.js (live at v1.2.0).
+// claude_agent_sdk added in Phase 10 / v1.1.0; opencode_sdk added in Phase 11
+// / v1.2.0. codex_sdk remains reserved for Phase 12 / v1.3.0.
 const KIND_REGISTRY = {
   opencode_cli: { mode: 'inproc' },
   openhands_sdk: { mode: 'subprocess' },
+  claude_agent_sdk: { mode: 'subprocess' },
+  opencode_sdk: { mode: 'inproc' },
 };
 
 // ---------------------------------------------------------------------------
@@ -97,35 +101,26 @@ describe('validate — provider_kind failures', () => {
     assertError(result.errors, 'providers[0].provider_kind', 'not registered');
   });
 
-  test('reserved kind "claude_agent_sdk" → exact "reserved for a future Phase" message', () => {
+  test('claude_agent_sdk (live since v1.1.0) with model → passes', () => {
     const config = {
       version: 'v1',
       tiers: {
-        low: { providers: [{ provider_kind: 'claude_agent_sdk', model: 'gpt-4' }] },
+        low: { providers: [{ provider_kind: 'claude_agent_sdk', model: 'anthropic/claude-sonnet-4-6' }] },
       },
     };
     const result = validate(config, { kindRegistry: KIND_REGISTRY });
-    assert.ok(!result.ok, 'Expected ok:false');
-    assertError(result.errors, 'provider_kind', "reserved for a future Phase and not registered in v1.0.0");
-    const e = result.errors.find((x) => x.message.includes('claude_agent_sdk'));
-    assert.ok(e, 'Error must mention claude_agent_sdk');
-    assert.ok(e.message.includes("provider_kind 'claude_agent_sdk' is reserved for a future Phase and not registered in v1.0.0"),
-      `Exact message mismatch: ${e.message}`);
+    assert.ok(result.ok, `Expected ok:true, got: ${JSON.stringify(result.errors)}`);
   });
 
-  test('reserved kind "opencode_sdk" → exact "reserved for a future Phase" message', () => {
+  test('opencode_sdk (live since v1.2.0) with model → passes', () => {
     const config = {
       version: 'v1',
       tiers: {
-        low: { providers: [{ provider_kind: 'opencode_sdk', model: 'gpt-4' }] },
+        low: { providers: [{ provider_kind: 'opencode_sdk', model: 'anthropic/claude-sonnet-4-6' }] },
       },
     };
     const result = validate(config, { kindRegistry: KIND_REGISTRY });
-    assert.ok(!result.ok, 'Expected ok:false');
-    const e = result.errors.find((x) => x.message.includes('opencode_sdk'));
-    assert.ok(e, 'Error must mention opencode_sdk');
-    assert.ok(e.message.includes("provider_kind 'opencode_sdk' is reserved for a future Phase and not registered in v1.0.0"),
-      `Exact message mismatch: ${e.message}`);
+    assert.ok(result.ok, `Expected ok:true, got: ${JSON.stringify(result.errors)}`);
   });
 
   test('reserved kind "codex_sdk" → exact "reserved for a future Phase" message', () => {
@@ -139,7 +134,7 @@ describe('validate — provider_kind failures', () => {
     assert.ok(!result.ok, 'Expected ok:false');
     const e = result.errors.find((x) => x.message.includes('codex_sdk'));
     assert.ok(e, 'Error must mention codex_sdk');
-    assert.ok(e.message.includes("provider_kind 'codex_sdk' is reserved for a future Phase and not registered in v1.0.0"),
+    assert.ok(e.message.includes("provider_kind 'codex_sdk' is reserved for a future Phase and not yet registered in this harness release"),
       `Exact message mismatch: ${e.message}`);
   });
 
