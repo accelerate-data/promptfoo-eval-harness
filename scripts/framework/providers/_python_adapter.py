@@ -30,7 +30,6 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
-import logging
 import os
 import sys
 import traceback
@@ -40,12 +39,6 @@ from typing import Any
 # Banner suppression — must happen before any SDK import at module level.
 # ---------------------------------------------------------------------------
 os.environ.setdefault("OPENHANDS_SUPPRESS_BANNER", "1")
-
-# ---------------------------------------------------------------------------
-# Logging to stderr only — never contaminates the IPC channel.
-# ---------------------------------------------------------------------------
-logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-_log = logging.getLogger("adapter")
 
 # ---------------------------------------------------------------------------
 # Ensure the framework providers package is importable when invoked via uv.
@@ -58,6 +51,13 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(_SCRIPT_DIR)))  # r
 for _dir in (_REPO_ROOT, _SCRIPT_DIR, _FRAMEWORK_DIR):
     if _dir not in sys.path:
         sys.path.insert(0, _dir)
+
+# ---------------------------------------------------------------------------
+# Structured NDJSON logger — initialized after sys.path is set.
+# ---------------------------------------------------------------------------
+from _structured_logger import create_logger  # noqa: E402
+
+_log = create_logger()
 
 # ---------------------------------------------------------------------------
 # Provider contract types (from same package, loaded after sys.path fix).
@@ -142,7 +142,7 @@ def main() -> None:
     args, _ = parser.parse_known_args()
 
     kind = args.kind
-    _log.info("adapter starting, kind=%s", kind)
+    _log.info(f"adapter starting, kind={kind}")
 
     # Load provider module early to surface UNSUPPORTED_KIND before stdin loop.
     try:
@@ -213,7 +213,7 @@ def main() -> None:
                 )
 
     except Exception as exc:
-        _log.error("adapter fatal error: %s", traceback.format_exc())
+        _log.error("adapter fatal error", error_stack=traceback.format_exc())
         _emit({"type": "error", "id": "", "error": _error_dict(exc)})
         sys.exit(1)
     finally:
@@ -248,7 +248,7 @@ def _handle_init(provider: Any, sessions: dict[str, Any], req: dict[str, Any], m
     except _AdapterError as exc:
         _emit({"type": "error", "id": msg_id, "error": exc.provider_error.to_dict()})
     except Exception as exc:
-        _log.error("init failed: %s", traceback.format_exc())
+        _log.error("init failed", error_stack=traceback.format_exc())
         _emit({"type": "error", "id": msg_id, "error": _error_dict(exc)})
 
 
@@ -287,7 +287,7 @@ def _handle_turn(provider: Any, sessions: dict[str, Any], req: dict[str, Any], m
         )
     except Exception as exc:
         # Any non-adapter exception goes into turn_ack.error to avoid killing the subprocess.
-        _log.error("turn failed: %s", traceback.format_exc())
+        _log.error("turn failed", error_stack=traceback.format_exc())
         _emit(
             {
                 "type": "turn_ack",
@@ -320,7 +320,7 @@ def _handle_finalize(provider: Any, sessions: dict[str, Any], req: dict[str, Any
     except _AdapterError as exc:
         _emit({"type": "error", "id": msg_id, "error": exc.provider_error.to_dict()})
     except Exception as exc:
-        _log.error("finalize failed: %s", traceback.format_exc())
+        _log.error("finalize failed", error_stack=traceback.format_exc())
         _emit({"type": "error", "id": msg_id, "error": _error_dict(exc)})
 
 
@@ -332,7 +332,7 @@ def _handle_shutdown(provider: Any, sessions: dict[str, Any], req: dict[str, Any
             provider.shutdown(session)
             del sessions[session_id]
     except Exception as exc:
-        _log.warning("shutdown error (ignored): %s", exc)
+        _log.warn(f"shutdown error (ignored): {exc}")
     _emit({"type": "shutdown_ack", "id": msg_id})
 
 
