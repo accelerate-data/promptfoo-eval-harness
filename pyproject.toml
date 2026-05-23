@@ -1,0 +1,18 @@
+[project]
+name = "promptfoo-eval-harness-py"
+version = "1.0.0"
+description = "Python adapter components for promptfoo-eval-harness"
+requires-python = ">=3.12,<3.14"
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "pytest-cov"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["scripts"]
+python_files = ["test_*.py", "*_test.py"]
