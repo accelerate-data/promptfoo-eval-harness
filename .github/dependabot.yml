@@ -10,3 +10,16 @@ updates:
     directory: /
     schedule:
       interval: weekly
+
+  # Watch PyPI for SDK pins defined in config/sdk-pins.toml.
+  # Framework owns these pins; consumer repos do NOT install SDK packages
+  # directly (spec §6.4). CVEs surface here and ship to consumers via a
+  # harness version bump.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-name: "openhands-sdk"
+    commit-message:
+      prefix: "build(deps)"

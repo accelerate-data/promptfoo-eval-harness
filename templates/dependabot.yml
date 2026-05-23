@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # Keep the eval harness itself up to date. Security patches for SDK pins
+  # (e.g. openhands-sdk) ship via harness version bumps — no separate PyPI
+  # entry is needed here. See https://github.com/accelerate-data/promptfoo-eval-harness/blob/main/docs/design.md
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-name: "@accelerate-data/promptfoo-eval-harness"
+    commit-message:
+      prefix: "build(deps)"
+
+  # Keep harness-provided GitHub Actions workflows up to date.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "build(deps)"

@@ -1,9 +1,10 @@
 'use strict';
 
 /**
- * eval-harness-init.test.js — Tests for bin/eval-harness-init.sh (G.31).
+ * eval-harness-init.test.js — Tests for bin/eval-harness-init.sh (G.31 + H.36).
  *
- * Verifies scaffold output, --upgrade idempotence, and --migrate-from-v0 flag.
+ * Verifies scaffold output, --upgrade idempotence, --migrate-from-v0 flag,
+ * and H.36 dependabot template drop logic.
  * Runs the actual shell script against tmp consumer repos.
  */
 
@@ -186,5 +187,111 @@ describe('eval-harness-init --upgrade --migrate-from-v0 (G.29 wiring)', () => {
     assert.equal(result.status, 0, result.stderr);
     const after = fs.readFileSync(dest, 'utf8');
     assert.equal(before, after, 'file should be byte-identical on second migration run');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// H.36 — Consumer dependabot template drop logic
+// ---------------------------------------------------------------------------
+
+describe('eval-harness-init dependabot template drop — no existing file (H.36)', () => {
+  let consumerDir;
+
+  before(() => {
+    consumerDir = makeTmpConsumer();
+    // Fresh init: consumer has no .github/dependabot.yml
+    const result = runInit(consumerDir);
+    assert.equal(result.status, 0, result.stderr);
+  });
+
+  after(() => rmDir(consumerDir));
+
+  test('materializes .github/dependabot.yml', () => {
+    const dep = path.join(consumerDir, '.github', 'dependabot.yml');
+    assert.ok(fs.existsSync(dep), '.github/dependabot.yml should be created');
+  });
+
+  test('materialized file contains package-ecosystem: npm', () => {
+    const dep = path.join(consumerDir, '.github', 'dependabot.yml');
+    const content = fs.readFileSync(dep, 'utf8');
+    assert.ok(content.includes('package-ecosystem: npm'), 'should contain npm ecosystem');
+  });
+
+  test('materialized file contains package-ecosystem: github-actions', () => {
+    const dep = path.join(consumerDir, '.github', 'dependabot.yml');
+    const content = fs.readFileSync(dep, 'utf8');
+    assert.ok(content.includes('package-ecosystem: github-actions'), 'should contain github-actions ecosystem');
+  });
+
+  test('materialized file does NOT contain package-ecosystem: pip (spec §6.4 + §6.6)', () => {
+    const dep = path.join(consumerDir, '.github', 'dependabot.yml');
+    const content = fs.readFileSync(dep, 'utf8');
+    assert.ok(!content.includes('package-ecosystem: pip'), 'consumer template must NOT watch PyPI');
+  });
+
+  test('does NOT create .github/dependabot.harness.example.yml', () => {
+    const example = path.join(consumerDir, '.github', 'dependabot.harness.example.yml');
+    assert.ok(!fs.existsSync(example), 'example file should not exist when no conflict');
+  });
+});
+
+describe('eval-harness-init dependabot template drop — existing file (H.36)', () => {
+  let consumerDir;
+
+  before(() => {
+    consumerDir = makeTmpConsumer();
+    // Pre-create a .github/dependabot.yml to simulate an existing consumer config.
+    const githubDir = path.join(consumerDir, '.github');
+    fs.mkdirSync(githubDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(githubDir, 'dependabot.yml'),
+      'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n    schedule:\n      interval: monthly\n',
+    );
+    const result = runInit(consumerDir);
+    assert.equal(result.status, 0, result.stderr);
+  });
+
+  after(() => rmDir(consumerDir));
+
+  test('does NOT overwrite existing .github/dependabot.yml', () => {
+    const dep = path.join(consumerDir, '.github', 'dependabot.yml');
+    const content = fs.readFileSync(dep, 'utf8');
+    // Original file had "monthly"; harness template uses "weekly" — original must survive.
+    assert.ok(content.includes('interval: monthly'), 'original dependabot.yml must not be overwritten');
+  });
+
+  test('drops .github/dependabot.harness.example.yml', () => {
+    const example = path.join(consumerDir, '.github', 'dependabot.harness.example.yml');
+    assert.ok(fs.existsSync(example), 'example file should be dropped next to existing dependabot.yml');
+  });
+
+  test('example file contains package-ecosystem: npm', () => {
+    const example = path.join(consumerDir, '.github', 'dependabot.harness.example.yml');
+    const content = fs.readFileSync(example, 'utf8');
+    assert.ok(content.includes('package-ecosystem: npm'), 'example should contain npm ecosystem');
+  });
+
+  test('example file contains package-ecosystem: github-actions', () => {
+    const example = path.join(consumerDir, '.github', 'dependabot.harness.example.yml');
+    const content = fs.readFileSync(example, 'utf8');
+    assert.ok(content.includes('package-ecosystem: github-actions'), 'example should contain github-actions ecosystem');
+  });
+
+  test('example file does NOT contain package-ecosystem: pip (spec §6.4 + §6.6)', () => {
+    const example = path.join(consumerDir, '.github', 'dependabot.harness.example.yml');
+    const content = fs.readFileSync(example, 'utf8');
+    assert.ok(!content.includes('package-ecosystem: pip'), 'example consumer template must NOT watch PyPI');
+  });
+
+  test('prints a notice about the existing file', () => {
+    // Re-run to capture stdout; prior before() already ran init but we need output.
+    const result = runInit(consumerDir);
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(
+      result.stdout.includes('dependabot.harness.example.yml') ||
+      result.stdout.includes('Manually merge') ||
+      result.stdout.includes('notice'),
+      `expected a notice about dependabot conflict in stdout:\n${result.stdout}`,
+    );
   });
 });

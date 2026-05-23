@@ -192,24 +192,33 @@ if [ "$MIGRATE_V0" -eq 1 ]; then
   echo "  done  migration complete (idempotent: re-running is safe)"
 fi
 
-# Add a Dependabot npm entry for the eval target so consumer repos get PRs
-# when @accelerate-data/promptfoo-eval-harness releases a new version.
+# ---------------------------------------------------------------------------
+# H.36 — Drop templates/dependabot.yml into consumer .github/dependabot.yml.
+#
+# The template watches npm (@accelerate-data/promptfoo-eval-harness) and
+# github-actions only. No pip block — SDK pin security patches ship via
+# harness version bumps (spec §6.4 + §6.6).
+#
+# Logic:
+#   - Consumer has NO .github/dependabot.yml → copy template verbatim.
+#   - Consumer HAS an existing .github/dependabot.yml → drop a sibling
+#     .github/dependabot.harness.example.yml and print a notice to merge.
+# ---------------------------------------------------------------------------
 DEPENDABOT_DIR="$REPO_ROOT/.github"
 DEPENDABOT="$DEPENDABOT_DIR/dependabot.yml"
-DEPENDABOT_ENTRY="  - package-ecosystem: npm
-    directory: /$TARGET
-    schedule:
-      interval: weekly"
+DEPENDABOT_TEMPLATE="$TEMPLATES/dependabot.yml"
 
 mkdir -p "$DEPENDABOT_DIR"
-if [ ! -f "$DEPENDABOT" ]; then
-  printf 'version: 2\nupdates:\n%s\n' "$DEPENDABOT_ENTRY" > "$DEPENDABOT"
-  echo "  create $DEPENDABOT"
-elif grep -qF "directory: /$TARGET" "$DEPENDABOT"; then
-  echo "  skip  $DEPENDABOT (/$TARGET entry already present)"
+if [ ! -f "$DEPENDABOT_TEMPLATE" ]; then
+  echo "  warn    dependabot template not found at $DEPENDABOT_TEMPLATE; skipping" >&2
+elif [ ! -f "$DEPENDABOT" ]; then
+  cp "$DEPENDABOT_TEMPLATE" "$DEPENDABOT"
+  echo "  create  $DEPENDABOT (from harness template)"
 else
-  printf '\n%s\n' "$DEPENDABOT_ENTRY" >> "$DEPENDABOT"
-  echo "  update $DEPENDABOT (added /$TARGET npm entry)"
+  DEPENDABOT_EXAMPLE="$DEPENDABOT_DIR/dependabot.harness.example.yml"
+  cp "$DEPENDABOT_TEMPLATE" "$DEPENDABOT_EXAMPLE"
+  echo "  notice  $DEPENDABOT already exists; harness template dropped at $DEPENDABOT_EXAMPLE"
+  echo "          Manually merge the npm + github-actions entries into $DEPENDABOT"
 fi
 
 cat <<EOM
