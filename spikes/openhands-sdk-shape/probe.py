@@ -183,7 +183,7 @@ def capture_sdk_shape() -> dict[str, Any]:
     return shape
 
 
-def run_live_probe(message: str, workspace_dir: str) -> dict[str, Any]:
+def run_live_probe(message: str, workspace_dir: str, model: str = "anthropic/claude-haiku-4-5") -> dict[str, Any]:
     """
     Attempt a live round-trip through the SDK.
 
@@ -200,9 +200,17 @@ def run_live_probe(message: str, workspace_dir: str) -> dict[str, Any]:
         "errors": [],
     }
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    provider_prefix = model.split("/", 1)[0] if "/" in model else "anthropic"
+    if provider_prefix == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY")
+        key_var_name = "OPENAI_API_KEY"
+    else:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        key_var_name = "ANTHROPIC_API_KEY"
+    result["model"] = model
+    result["key_var"] = key_var_name
     if not api_key:
-        result["errors"].append("ANTHROPIC_API_KEY not set — live run skipped")
+        result["errors"].append(f"{key_var_name} not set — live run skipped")
         result["live_run_attempted"] = False
         return result
 
@@ -238,7 +246,7 @@ def run_live_probe(message: str, workspace_dir: str) -> dict[str, Any]:
     try:
         # Construct LLM — reads api_key from env automatically via LiteLLM
         llm = sdk.LLM(
-            model="anthropic/claude-haiku-4-5",  # cheapest for spike
+            model=model,  # passed by caller; default anthropic/claude-haiku-4-5
             api_key=api_key,
         )
 
@@ -361,6 +369,11 @@ def main() -> None:
         action="store_true",
         help="Capture static SDK shape only; do not attempt a live API call",
     )
+    parser.add_argument(
+        "--model",
+        default="anthropic/claude-haiku-4-5",
+        help="LiteLLM model string. Examples: anthropic/claude-haiku-4-5, openai/gpt-4o-mini",
+    )
     args = parser.parse_args()
 
     output: dict[str, Any] = {
@@ -368,6 +381,8 @@ def main() -> None:
         "sdk": "openhands-sdk==1.22.1",
         "python_version": sys.version.split()[0],
         "ANTHROPIC_API_KEY_present": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "OPENAI_API_KEY_present": bool(os.environ.get("OPENAI_API_KEY")),
+        "model": args.model,
         "mode": "shape-only" if args.shape_only else "live",
     }
 
@@ -380,7 +395,7 @@ def main() -> None:
     # Live run if key present and not shape-only
     if not args.shape_only:
         with tempfile.TemporaryDirectory(prefix="oh_probe_") as tmpdir:
-            live_result = run_live_probe(args.message, tmpdir)
+            live_result = run_live_probe(args.message, tmpdir, model=args.model)
         output["live_result"] = live_result
     else:
         output["live_result"] = {

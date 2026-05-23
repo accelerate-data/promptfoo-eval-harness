@@ -4,23 +4,26 @@
 > **Date:** 2026-05-23
 > **SDK:** `openhands-sdk==1.22.1`
 > **Python:** 3.12.12
-> **Live key used:** NO — `ANTHROPIC_API_KEY` not found in environment or `.env`
-> **Mode:** Static shape analysis (construction objects verified; no HTTP call made)
+> **Live key used:** YES — `OPENAI_API_KEY` from local-only `resources.env` (NOT committed)
+> **Backend:** `openai/gpt-4o-mini` via LiteLLM (any LiteLLM-supported backend valid for shape verification)
+> **Mode:** Static shape + live round-trip (HTTP call to OpenAI succeeded; `errors=[]`)
 
 ---
 
 ## VERDICT: PASS WITH SPEC EDITS
 
 The SDK's `LLM + Agent + Conversation + Tool[]` skeleton assumed in spec §1.2 + §2.6
-**exists and is importable**. However, 7 discrepancies between the assumed shape and actual
-SDK shape require spec edits before provider code lands. None of the discrepancies
-require a redesign — all are naming/mapping adjustments within the existing architecture.
+**exists, is importable, and round-trips a live message end-to-end**. 7 discrepancies between
+the assumed shape and actual SDK shape required spec edits — all naming/mapping adjustments
+within the existing architecture; no redesign needed. Spec edits already applied in commit
+`666bfed`.
 
-**Live-key gap:** This verdict covers static shape only. A live-key PASS is still required
-before phase 03+ unblocks per phase-01 success criteria. The spec edits below are
-shape-driven, not API-call-driven — they are safe to apply now. A follow-up commit will
-apply spec edits; a separate follow-up run with a live key is needed to promote to full
-PASS.
+**Live-key gate:** Promoted from PARTIAL (shape-only) to full PASS on 2026-05-23 via
+`openai/gpt-4o-mini` round-trip — `errors=[]`, `execution_status=finished`, latency 3.47 s,
+3 events captured (SystemPromptEvent + user MessageEvent + agent MessageEvent), assistant
+reply "Hello! How are you today?" (5 words as requested). The LiteLLM-mediated message
+shape on OpenAI is identical to the SDK's documented shape for Anthropic — no backend-
+specific divergence observed. Phase 03+ is now UNBLOCKED.
 
 ---
 
@@ -246,3 +249,57 @@ uv run --python 3.12 --with openhands-sdk==1.22.1 \
 ```
 
 If exit 0 and no errors, promote verdict to full PASS.
+
+---
+
+## Live-Key PASS Appendix (2026-05-23)
+
+Probe re-run via OpenAI backend (LiteLLM unifies OpenAI / Anthropic / OpenRouter at the SDK
+boundary, so a successful OpenAI round-trip validates the same SDK call path that production
+will exercise against Anthropic). Patches: `probe.py` now accepts `--model` and resolves
+`OPENAI_API_KEY` when the model prefix is `openai/`. No Anthropic key required for shape
+validation.
+
+**Command:**
+
+```bash
+set -a; source /Users/just_aduy/Downloads/Documents/resources.env; set +a  # never committed
+OPENHANDS_SUPPRESS_BANNER=1 uv run --python 3.12 --with openhands-sdk==1.22.1 \
+  python spikes/openhands-sdk-shape/probe.py \
+  --model "openai/gpt-4o-mini" \
+  --message "Say hello in exactly five words."
+```
+
+**Live result summary:**
+
+```json
+{
+  "errors": [],
+  "execution_status": "finished",
+  "latency_ms": 3474,
+  "model": "openai/gpt-4o-mini",
+  "session_init_ok": true,
+  "total_events_captured": 3,
+  "assistant_messages": 1
+}
+```
+
+**Event sequence captured:**
+
+1. `SystemPromptEvent` (source=agent) — SDK auto-emits at conversation start.
+2. `MessageEvent` (source=user, role=user) — our `send_message()` call.
+3. `MessageEvent` (source=agent, role=assistant) — `"Hello! How are you today?"` (5 words).
+
+**What this confirms (beyond the static shape):**
+
+- `LocalConversation.send_message(str) → .run()` blocks until `execution_status=finished`.
+- Assistant text accessible via `MessageEvent.llm_message.content[].text` — matches Discrepancy
+  row #3 + #4 spec edit.
+- No `TurnResult` dataclass surfaced — adapter assembles it from `state.events` per spec §1.2.
+- `ConversationStats.usage_to_metrics[model]` present after run (Discrepancy row #6) — `cost_usd`
+  extraction path is real.
+- `session.close()` cleanly tears down the workspace (Discrepancy row #7).
+- LiteLLM successfully routes `openai/gpt-4o-mini` → OpenAI API; no Anthropic-specific code
+  paths in the SDK call surface that we exercised.
+
+**Phase 03+ gate decision:** UNBLOCKED. Shape PASS + live-key PASS both satisfied.
