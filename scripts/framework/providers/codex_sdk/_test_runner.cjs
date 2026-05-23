@@ -5,7 +5,7 @@
  *
  * Invoked by ../../_node_bridge.codex_sdk.test.js via:
  *
- *   node --require .../tests/_mock_codex_sdk/register.js _test_runner.cjs
+ *   node --import .../tests/_mock_codex_sdk/register.mjs _test_runner.cjs
  *
  * Reads a JSON request from stdin describing the case (turns, model,
  * sandbox_mode, reasoning_effort, case_id), drives a real
@@ -13,9 +13,10 @@
  * JSON to stdout as a single line.
  *
  * KIND_REGISTRY.codex_sdk is wired in `_node_bridge.js` (Step 2); the
- * --require register patches `Module._resolveFilename` so the provider's
- * `require('@openai/codex-sdk')` resolves to the mock module under
- * tests/_mock_codex_sdk/index.js without the real SDK installed.
+ * --import register.mjs installs an ESM loader hook so the provider's
+ * `await import('@openai/codex-sdk')` resolves to the mock module under
+ * tests/_mock_codex_sdk/sdk.mjs without the real SDK installed. (v1.3.1
+ * — the real `@openai/codex-sdk` is ESM-only.)
  */
 
 const fs = require('node:fs');

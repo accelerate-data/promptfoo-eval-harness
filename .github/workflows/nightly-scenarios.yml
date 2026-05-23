@@ -72,14 +72,15 @@ jobs:
           source $HOME/.cargo/env 2>/dev/null || true
           node bin/ad-evals.js run tests/harness-scenarios/packages/opencode-sdk-mock-multi-turn
 
-      - name: Run codex_sdk mock scenario (mock SDK via CJS resolver hook)
-        # NODE_OPTIONS scoped to this step only — Module._resolveFilename
-        # patch in register.js remaps `@openai/codex-sdk` to the mock so
+      - name: Run codex_sdk mock scenario (mock SDK via ESM loader hook)
+        # NODE_OPTIONS scoped to this step only — Module.register loader
+        # hook in register.mjs remaps `@openai/codex-sdk` to the mock so
         # neither the real SDK nor the @openai/codex CLI bin is spawned.
-        # Other scenarios never see this hook because the step boundary
-        # unsets NODE_OPTIONS.
+        # The real `@openai/codex-sdk` is ESM-only (v1.3.1), so we use
+        # --import instead of --require. Other scenarios never see this
+        # hook because the step boundary unsets NODE_OPTIONS.
         env:
-          NODE_OPTIONS: --require ${{ github.workspace }}/tests/_mock_codex_sdk/register.js
+          NODE_OPTIONS: --import file://${{ github.workspace }}/tests/_mock_codex_sdk/register.mjs
         run: |
           source $HOME/.cargo/env 2>/dev/null || true
           node bin/ad-evals.js run tests/harness-scenarios/packages/codex-sdk-mock-multi-turn

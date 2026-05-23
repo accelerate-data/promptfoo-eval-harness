@@ -1,13 +1,11 @@
-'use strict';
-
 /**
  * Phase 12 — mock @openai/codex-sdk implementation (VD-2174-11).
  *
- * Loaded into Node's CJS module cache via tests/_mock_codex_sdk/register.js
- * (NODE_OPTIONS=--require ...). Mirrors the constructor + Thread surface the
- * codex_sdk provider uses:
+ * Loaded as the resolved ESM URL whenever `import('@openai/codex-sdk')` is
+ * issued under the loader hook in tests/_mock_codex_sdk/loader.mjs. Mirrors
+ * the constructor + Thread surface the codex_sdk provider uses:
  *
- *   const { Codex } = require('@openai/codex-sdk');
+ *   const { Codex } = await import('@openai/codex-sdk');
  *   const codex = new Codex({ apiKey, baseUrl, env });
  *   const thread = codex.startThread({ workingDirectory, skipGitRepoCheck,
  *                                       model, sandboxMode, modelReasoningEffort });
@@ -20,15 +18,16 @@
  *   - `unsupported_model`: codex.startThread throws UNSUPPORTED_MODEL
  *
  * Multi-turn dependency: Thread keeps per-instance "remembered" state so
- * turn 2 ("what number…") can recall a value set in turn 1 ("remember N").
+ * later turns ("what number…") can recall a value set earlier
+ * ("remember N").
  *
  * Side channel for tests: every ctor/startThread/run call is recorded onto
  * `globalThis.__codexMockState` so provider.test.js can assert HOME
  * isolation, workingDirectory continuity, and skipGitRepoCheck plumbing.
  */
 
-const fs = require('node:fs');
-const path = require('node:path');
+import fs from 'node:fs';
+import path from 'node:path';
 
 function _scenario() {
   return (process.env.CODEX_SDK_MOCK_SCENARIO || 'happy').trim();
@@ -140,4 +139,4 @@ class Codex {
   }
 }
 
-module.exports = { Codex };
+export { Codex, Thread };

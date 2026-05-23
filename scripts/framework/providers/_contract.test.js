@@ -48,12 +48,14 @@ function parseMdTable(src) {
   for (const line of tableSection.split('\n')) {
     // Skip header, separator, and empty lines
     const trimmed = line.trim();
-    if (!trimmed.startsWith('|') || trimmed.startsWith('|---') || trimmed.startsWith('| Type')) {
+    if (!trimmed.startsWith('|') || trimmed.startsWith('| Type')) {
       continue;
     }
     // | Type | Field | ... |
     const cols = trimmed.split('|').map((c) => c.trim()).filter(Boolean);
     if (cols.length >= 2) {
+      // Separator row: every column is `---` (markdown table delimiter)
+      if (cols.every((c) => /^:?-+:?$/.test(c))) continue;
       rows.push({ type: cols[0], field: cols[1] });
     }
   }

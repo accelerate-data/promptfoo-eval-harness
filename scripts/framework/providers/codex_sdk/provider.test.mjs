@@ -1,13 +1,14 @@
-'use strict';
-
 /**
  * Phase 12 — Layer 1 direct unit tests for codex_sdk provider.
  *
- * Top-level require of tests/_mock_codex_sdk/register.js installs the
- * Module._resolveFilename hook BEFORE the provider's lazy
- * require('@openai/codex-sdk') runs in create().init(). The mock module
- * records every Codex ctor + startThread + run event onto
- * globalThis.__codexMockState so we can assert:
+ * The provider calls `await import('@openai/codex-sdk')` lazily inside
+ * `init()` (v1.3.1 — the real package is ESM-only). We register the ESM
+ * loader hook at module load time via `Module.register`, BEFORE any
+ * subsequent dynamic import of `@openai/codex-sdk` runs, so the provider
+ * resolves the mock module under `tests/_mock_codex_sdk/sdk.mjs` instead
+ * of the real package. The mock module records every Codex ctor +
+ * startThread + run event onto globalThis.__codexMockState so we can
+ * assert:
  *
  *   - HOME isolation across parallel cases (per-session mkdtemp)
  *   - workingDirectory continuity within a case (same Thread for both turns)
@@ -18,16 +19,18 @@
  *   - failure scenarios surface contract codes (AUTH, rate_limit, UNSUPPORTED_MODEL)
  */
 
-require('../../../../tests/_mock_codex_sdk/register.js');
+import { register } from 'node:module';
+register('../../../../tests/_mock_codex_sdk/loader.mjs', import.meta.url);
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const fsp = require('node:fs/promises');
-const os = require('node:os');
-const path = require('node:path');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
-const { create } = require('./provider');
+const providerMod = await import('./provider.js');
+const { create } = providerMod.default || providerMod;
 
 function _resetMockState() {
   globalThis.__codexMockState = { events: [] };

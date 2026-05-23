@@ -4,11 +4,12 @@ Layer 4 mock-mode scenario for `provider_kind=codex_sdk` (Phase 12 / VD-2174-11)
 
 Validates the in-proc `@openai/codex-sdk` provider end-to-end through
 the single `file://` Promptfoo bridge without a live Codex API key or
-network call. The provider's `require('@openai/codex-sdk')` is rewired
-to the deterministic mock under
-[`tests/_mock_codex_sdk/`](../../../_mock_codex_sdk/) by a CJS resolver
-hook (`register.js`) that the runtime installs via
-`NODE_OPTIONS=--require …/register.js`.
+network call. The provider's `await import('@openai/codex-sdk')` is
+rewired to the deterministic mock under
+[`tests/_mock_codex_sdk/`](../../../_mock_codex_sdk/) by an ESM loader
+hook (`register.mjs` → `loader.mjs`) that the runtime installs via
+`NODE_OPTIONS=--import file://…/register.mjs`. (v1.3.1 — the real
+`@openai/codex-sdk@0.133.0` is ESM-only.)
 
 ## Coverage
 
@@ -20,15 +21,15 @@ hook (`register.js`) that the runtime installs via
 ## Running locally
 
 ```sh
-NODE_OPTIONS="--require $PWD/tests/_mock_codex_sdk/register.js" \
+NODE_OPTIONS="--import file://$PWD/tests/_mock_codex_sdk/register.mjs" \
   node bin/ad-evals.js run tests/harness-scenarios/packages/codex-sdk-mock-multi-turn
 ```
 
 `NODE_OPTIONS` must include the mock register file so the
-`Module._resolveFilename` patch takes over `@openai/codex-sdk`
-resolution before the provider loads it. Without it the scenario will
-attempt to require the real `@openai/codex-sdk`, which in turn spawns
-the `@openai/codex` CLI and contacts the network.
+`Module.register` loader hook takes over `@openai/codex-sdk` resolution
+before the provider's `await import(...)` runs. Without it the
+scenario will attempt to load the real `@openai/codex-sdk`, which in
+turn spawns the `@openai/codex` CLI and contacts the network.
 
 ## Nightly CI
 

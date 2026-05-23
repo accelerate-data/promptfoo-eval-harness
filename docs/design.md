@@ -278,7 +278,7 @@ Layer 4 nightly coverage lives at `tests/harness-scenarios/packages/opencode-sdk
 
 ## In-proc Node provider — `codex_sdk`
 
-`provider_kind=codex_sdk` lives at `scripts/framework/providers/codex_sdk/provider.js` and is dispatched in-proc through Phase 9.5's `_dispatchInproc` (no subprocess, no NDJSON). The bridge's `KIND_REGISTRY` entry resolves to that module path so a single Promptfoo `file://` provider face still covers all five kinds uniformly. The SDK is CJS, so `require('@openai/codex-sdk')` resolves lazily inside `create()` — tests intercept the resolution through a `Module._resolveFilename` patch installed by `tests/_mock_codex_sdk/register.js`.
+`provider_kind=codex_sdk` lives at `scripts/framework/providers/codex_sdk/provider.js` and is dispatched in-proc through Phase 9.5's `_dispatchInproc` (no subprocess, no NDJSON). The bridge's `KIND_REGISTRY` entry resolves to that module path so a single Promptfoo `file://` provider face still covers all five kinds uniformly. The real `@openai/codex-sdk@0.133.0` is ESM-only (`"type": "module"` with `import`-only `exports`), so the provider does `await import('@openai/codex-sdk')` lazily inside `init()` — tests intercept the resolution through an ESM `Module.register` loader hook installed by `tests/_mock_codex_sdk/register.mjs` (v1.3.1 hotfix; v1.3.0 had a CJS `Module._resolveFilename` patch which could not resolve the real package against its `exports` field).
 
 ### Session and workspace isolation
 
@@ -286,7 +286,7 @@ Layer 4 nightly coverage lives at `tests/harness-scenarios/packages/opencode-sdk
 
 ### Thread reuse for multi-turn
 
-A single `Codex` instance is constructed in `init()`. The first `turn()` calls `codex.startThread({ workingDirectory, sandboxMode, model, modelReasoningEffort })` and stores the returned `Thread` on the provider instance. Subsequent `turn()` calls reuse the same `Thread` via `thread.run({ input })`, which is how the SDK propagates conversation history across turns. `provider_test.js` locks this with a 3-turn dependency test (turn 1 stores `42`, turn 3 must recall it from the mock SDK's per-thread state).
+A single `Codex` instance is constructed in `init()`. The first `turn()` calls `codex.startThread({ workingDirectory, sandboxMode, model, modelReasoningEffort })` and stores the returned `Thread` on the provider instance. Subsequent `turn()` calls reuse the same `Thread` via `thread.run({ input })`, which is how the SDK propagates conversation history across turns. `provider.test.mjs` locks this with a 3-turn dependency test (turn 1 stores `42`, turn 3 must recall it from the mock SDK's per-thread state).
 
 ### Defaults and overrides
 
@@ -308,7 +308,7 @@ The provider's `_mapError` collapses SDK exceptions onto the contract codes:
 
 ### Mock-mode scenario (codex_sdk)
 
-Layer 4 nightly coverage lives at `tests/harness-scenarios/packages/codex-sdk-mock-multi-turn/`. `tests/_mock_codex_sdk/register.js` patches `Module._resolveFilename` to remap `@openai/codex-sdk` to the deterministic mock at `tests/_mock_codex_sdk/sdk.js` so neither the real `@openai/codex-sdk` nor the `@openai/codex` CLI bin is spawned. The nightly workflow scopes `NODE_OPTIONS=--require .../register.js` (CJS resolver hook, not the ESM `--import` form used by `opencode_sdk`) to a dedicated step so the hook never leaks into the other scenarios; that step runs the scenario via `node bin/ad-evals.js run tests/harness-scenarios/packages/codex-sdk-mock-multi-turn`, which routes through `dir-walk.spawnScenario` (single-scenario bypass of `EVAL_ROOT`) since the scenario lives in the framework-owned tree.
+Layer 4 nightly coverage lives at `tests/harness-scenarios/packages/codex-sdk-mock-multi-turn/`. `tests/_mock_codex_sdk/register.mjs` calls `Module.register('./loader.mjs', import.meta.url)`; the loader rewrites the bare specifier `@openai/codex-sdk` to the deterministic mock at `tests/_mock_codex_sdk/sdk.mjs` so neither the real `@openai/codex-sdk` nor the `@openai/codex` CLI bin is spawned. The nightly workflow scopes `NODE_OPTIONS=--import file://.../register.mjs` (matching the ESM-only shape of the real package, same as `opencode_sdk`) to a dedicated step so the hook never leaks into the other scenarios; that step runs the scenario via `node bin/ad-evals.js run tests/harness-scenarios/packages/codex-sdk-mock-multi-turn`, which routes through `dir-walk.spawnScenario` (single-scenario bypass of `EVAL_ROOT`) since the scenario lives in the framework-owned tree.
 
 ## Open Questions
 

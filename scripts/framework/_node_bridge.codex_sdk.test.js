@@ -4,10 +4,12 @@
  * Phase 12 — Layer 2 callApi round-trip for the codex_sdk in-proc kind.
  *
  * Mirrors `_node_bridge.opencode_sdk.test.js` for the Codex SDK path. The
- * difference: @openai/codex-sdk is CJS, so the mock uses a
- * `Module._resolveFilename` hook installed via `--require`. The hook lives
- * at `tests/_mock_codex_sdk/register.js` and remaps the bare specifier to
- * `tests/_mock_codex_sdk/index.js` — that way the real package does not
+ * real @openai/codex-sdk is ESM-only (v1.3.1 hotfix), so the mock uses an
+ * ESM Module.register loader hook installed via `--import`. The entry
+ * lives at `tests/_mock_codex_sdk/register.mjs`, which registers
+ * `tests/_mock_codex_sdk/loader.mjs` to remap the bare specifier
+ * `@openai/codex-sdk` to the local mock at
+ * `tests/_mock_codex_sdk/sdk.mjs` — that way the real package does not
  * need to be installed for these tests.
  *
  * The child runs `_test_runner.cjs`, which drives a real
@@ -18,13 +20,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { spawnSync } = require('node:child_process');
 
-const REGISTER = path.resolve(__dirname, '..', '..', 'tests', '_mock_codex_sdk', 'register.js');
+const REGISTER = path.resolve(__dirname, '..', '..', 'tests', '_mock_codex_sdk', 'register.mjs');
 const RUNNER = path.resolve(__dirname, 'providers', 'codex_sdk', '_test_runner.cjs');
 
 function runRunner(req, { scenario = 'happy', extraEnv = {} } = {}) {
-  const result = spawnSync(process.execPath, ['--require', REGISTER, RUNNER], {
+  const result = spawnSync(process.execPath, ['--import', pathToFileURL(REGISTER).href, RUNNER], {
     encoding: 'utf8',
     input: JSON.stringify(req),
     env: {

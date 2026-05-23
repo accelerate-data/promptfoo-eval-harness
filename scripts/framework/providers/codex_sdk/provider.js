@@ -3,10 +3,11 @@
 /**
  * Phase 12 — codex_sdk in-process Node provider (VD-2174-11).
  *
- * Drives `@openai/codex-sdk` (CJS) against a per-case ephemeral workspace.
- * The bridge's generic `_dispatchInproc` (Phase 9.5) loads this module once
- * per run, calls `create()` to get a provider instance, and drives the
- * `init → turn[*] → finalize → shutdown` lifecycle.
+ * Drives `@openai/codex-sdk` (ESM, Node ≥ 18 dynamic import) against a
+ * per-case ephemeral workspace. The bridge's generic `_dispatchInproc`
+ * (Phase 9.5) loads this module once per run, calls `create()` to get a
+ * provider instance, and drives the `init → turn[*] → finalize → shutdown`
+ * lifecycle.
  *
  * Per-case isolation strategy (Skeptic #9 + Architect #4):
  *   - `init(cfg)` reserves a per-session HOME directory (mkdtempSync) so
@@ -21,9 +22,11 @@
  *   - `shutdown` best-effort removes the per-case workspace AND the
  *     per-session HOME directory.
  *
- * SDK loading: `require('@openai/codex-sdk')` lazily inside create() — the
- * real package is CJS, but tests inject a mock via require.cache hook
- * (tests/_mock_codex_sdk/register.js).
+ * SDK loading: `await import('@openai/codex-sdk')` lazily inside init() —
+ * the real package is ESM-only (`"type": "module"` with `import`-only
+ * exports), so CJS `require()` raises `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+ * Tests inject a mock via an ESM Module.register loader hook installed by
+ * `tests/_mock_codex_sdk/register.mjs` (NODE_OPTIONS=--import ...).
  */
 
 const fs = require('node:fs');
@@ -128,15 +131,15 @@ async function _bestEffortRm(dir) {
 function create() {
   let _sdk = null;
 
-  function _loadSdk() {
+  async function _loadSdk() {
     if (_sdk) return _sdk;
-    _sdk = require('@openai/codex-sdk');
+    _sdk = await import('@openai/codex-sdk');
     return _sdk;
   }
 
   return {
     async init(cfg) {
-      const sdk = _loadSdk();
+      const sdk = await _loadSdk();
       const workspaceRoot = _resolveWorkspaceRoot(cfg);
       _ensureDir(workspaceRoot);
 
