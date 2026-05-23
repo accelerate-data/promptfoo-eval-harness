@@ -16,6 +16,8 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING, Any
 
+from _errors import ProviderRuntimeError
+
 if TYPE_CHECKING:
     pass
 
@@ -40,27 +42,21 @@ def get_allowed_tools(names: list[str] | None = None) -> list[Any]:
     Raises:
         ProviderError: if any name in *names* is not in ALLOWED_TOOL_NAMES.
     """
-    # Import ProviderError at call time to avoid circular imports at module load.
-    from _contract import ProviderError  # noqa: PLC0415
-
     requested = set(names) if names is not None else ALLOWED_TOOL_NAMES
     unknown = requested - ALLOWED_TOOL_NAMES
     if unknown:
-        raise ProviderError(
+        raise ProviderRuntimeError(
             code="UNKNOWN_TOOL",
             message=f"unknown tool(s): {sorted(unknown)}; allowed: {sorted(ALLOWED_TOOL_NAMES)}",
-            retryable=False,
         )
 
     # Lazy SDK import — only executed when the adapter actually runs under uv.
     try:
         from openhands.sdk import Tool  # noqa: PLC0415
     except ImportError as exc:
-        # Re-raise as ProviderError so callers get a structured error.
-        raise ProviderError(
+        raise ProviderRuntimeError(
             code="sdk_error",
             message=f"openhands-sdk not installed or importable: {exc}",
-            retryable=False,
         ) from exc
 
     return [Tool(name=name, params={}) for name in sorted(requested)]
