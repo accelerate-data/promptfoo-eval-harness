@@ -28,7 +28,9 @@ Banner suppression: OPENHANDS_SUPPRESS_BANNER=1 is set before any provider impor
 from __future__ import annotations
 
 import argparse
+import asyncio
 import importlib
+import inspect
 import json
 import os
 import sys
@@ -88,7 +90,24 @@ def _make_error(code: str, message: str, retryable: bool = False) -> _AdapterErr
 _PROVIDER_REGISTRY: dict[str, str] = {
     "mock": "tests._mock_provider.provider",
     "openhands_sdk": "scripts.framework.providers.openhands_sdk.provider",
+    # Async test fixtures (Phase 9.5 — VD-2174-12). Harness L2 tests only.
+    "async_mock": "tests._mock_async_python_provider.provider",
+    "async_mock_raising": "tests._mock_async_python_provider.provider_raising",
 }
+
+
+def _maybe_await(provider: Any, name: str, *args: Any, **kwargs: Any) -> Any:
+    """Call ``provider.<name>(*args, **kwargs)`` synchronously or via ``asyncio.run``
+    depending on whether the bound method is a coroutine function.
+
+    Phase 9.5 (VD-2174-12) — lets the same adapter host sync providers
+    (mock, openhands_sdk) and async providers (claude_agent_sdk in Phase 10)
+    without duplicating the dispatch logic.
+    """
+    method = getattr(provider, name)
+    if inspect.iscoroutinefunction(method):
+        return asyncio.run(method(*args, **kwargs))
+    return method(*args, **kwargs)
 
 
 def _load_provider(kind: str) -> Any:
@@ -220,7 +239,7 @@ def main() -> None:
         # Idempotent shutdown of any remaining sessions.
         for sess in list(sessions.values()):
             try:
-                provider.shutdown(sess)
+                _maybe_await(provider, "shutdown", sess)
             except Exception:
                 pass
 
@@ -241,7 +260,7 @@ def _handle_init(provider: Any, sessions: dict[str, Any], req: dict[str, Any], m
             provider_label=raw_cfg.get("provider_label", ""),
             extra=raw_cfg.get("extra", {}),
         )
-        session = provider.init(cfg)
+        session = _maybe_await(provider, "init", cfg)
         session_id = str(id(session))
         sessions[session_id] = session
         _emit({"type": "init_ack", "id": msg_id, "session_id": session_id})
@@ -262,7 +281,7 @@ def _handle_turn(provider: Any, sessions: dict[str, Any], req: dict[str, Any], m
                 "UNKNOWN_SESSION",
                 f"session_id {session_id!r} not found",
             )
-        result: TurnResult = provider.turn(session, message)
+        result: TurnResult = _maybe_await(provider, "turn", session, message)
         _emit(
             {
                 "type": "turn_ack",
@@ -306,7 +325,7 @@ def _handle_finalize(provider: Any, sessions: dict[str, Any], req: dict[str, Any
     try:
         if session is None:
             raise _make_error("UNKNOWN_SESSION", f"session_id {session_id!r} not found")
-        result_f: FinalResult = provider.finalize(session)
+        result_f: FinalResult = _maybe_await(provider, "finalize", session)
         meta = result_f.metadata or {}
         _emit(
             {
@@ -329,7 +348,7 @@ def _handle_shutdown(provider: Any, sessions: dict[str, Any], req: dict[str, Any
     session = sessions.get(session_id)
     try:
         if session is not None:
-            provider.shutdown(session)
+            _maybe_await(provider, "shutdown", session)
             del sessions[session_id]
     except Exception as exc:
         _log.warn(f"shutdown error (ignored): {exc}")
