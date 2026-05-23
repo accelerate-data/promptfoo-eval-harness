@@ -2,13 +2,32 @@
 
 > Date: 2026-05-22
 > Author: Brainstorming session (duy.nguyen@acceleratedata.ai + Claude)
-> Status: Draft v8 (post-codex review pass 7 rework)
+> Status: Draft v9 (spike A.0.B fixes — 3 load-bearing edits)
 > Linear: VD-XXXX (to be created)
 > Scope: Refactor `@accelerate-data/promptfoo-eval-harness` to add a plugin
 > contract supporting multiple SDK providers, with multi-turn + parallelism,
 > while **preserving the existing OpenCode CLI provider** as the production
 > flow for data-engineering. Ship as `v1.0.0`.
 
+> **CHANGES from v8 (spike A.0.B fixes — 3 load-bearing edits)**:
+> 1. **§2.2 + §2.6: config arrives via constructor, NOT `callApi` options.**
+>    Spike A.0.B verified: Promptfoo passes `{ abortSignal }` as the `callApi`
+>    third arg; per-provider `config:` block arrives only in the constructor
+>    `options` arg. §2.2 callout rewritten; §2.6 `callApi` comment + code
+>    updated (`options?.config || this.options.config` → `this.options.config`).
+>    (§2.2, §2.6)
+> 2. **§2.6 + §3.2: `vars.turns` must be JSON-encoded; Promptfoo expands
+>    YAML arrays into rows.** Spike A.0.B revealed that a YAML array-valued
+>    `vars.turns` is expanded by Promptfoo's matrix engine into separate test
+>    rows — the bridge never sees a JS Array at `callApi` time. Multi-turn now
+>    requires JSON-encoded string encoding. New `parseTurns()` helper added
+>    to §2.6; both `opencode_cli` and SDK branches updated. §3.1 example
+>    updated to JSON-encoded form; §3.2 precedence rules rewritten. (§2.6,
+>    §3.1, §3.2, §3.2.1)
+> 3. **Promptfoo injects `basePath` into constructor config.** `parseProviderConfig`
+>    must not reject unknown keys (or explicitly strip `basePath`). Noted in
+>    §2.2. (§2.2)
+>
 > **CHANGES from v7 (codex review pass 7 fixes — 1 finding)**:
 > 1. **§2.6 `opencode_cli` validation no longer routes `undefined` into
 >    `provider.callApi`.** v7 added `length === 0` guard but missed the
