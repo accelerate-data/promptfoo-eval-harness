@@ -15,4 +15,5 @@ select = ["E", "F", "W", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["scripts"]
-python_files = ["test_*.py", "*_test.py"]
+python_files = ["test_*.py", "*_test.py", "*.test.py"]
+addopts = "--import-mode=importlib"
