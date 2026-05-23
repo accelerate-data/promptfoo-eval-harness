@@ -115,6 +115,23 @@ const KIND_REGISTRY = {
       ];
     },
   },
+  // Phase 10 (VD-2174-9) — Claude Agent SDK. Async lifecycle; the Python
+  // adapter wraps each call in asyncio.run() via _maybe_await. The bridge
+  // threads cfg.extra.total_turns = turns.length so init() can decide between
+  // the stateful ClaudeSDKClient (multi-turn) and stateless query() generator.
+  claude_agent_sdk: {
+    mode: 'subprocess',
+    adapter: _ADAPTER_PATH,
+    get spawn() {
+      const version = loadSdkPins().claude_agent_sdk.version;
+      return [
+        'uv', 'run', '--python', '3.12',
+        '--with', `claude-agent-sdk==${version}`,
+        'python', '-m', 'scripts.framework.providers._python_adapter',
+        '--kind=claude_agent_sdk',
+      ];
+    },
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -598,7 +615,14 @@ class HarnessBridgeProvider {
     const runId = process.env.AD_EVALS_RUN_ID || '';
     const caseId = cfg.case_id || context?.vars?.case_id || '';
     const workspaceDir = _ensureWorkspace(runId, caseId);
-    const cfgWithWorkspace = { ...cfg, workspace_root: workspaceDir };
+    // Thread the planned turn count through cfg.extra so providers can branch
+    // on it at init() time (Phase 10 / VD-2174-9). Existing providers that
+    // ignore cfg.extra.total_turns are unaffected.
+    const cfgWithWorkspace = {
+      ...cfg,
+      workspace_root: workspaceDir,
+      extra: { ...(cfg.extra || {}), total_turns: turns.length },
+    };
 
     try {
       child = _getSpawn()(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'], env });

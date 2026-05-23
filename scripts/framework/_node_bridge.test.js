@@ -112,12 +112,14 @@ describe('_node_bridge', () => {
   });
 
   describe('KIND_REGISTRY', () => {
-    test('has exactly two entries: opencode_cli and openhands_sdk', () => {
+    test('has three entries: opencode_cli, openhands_sdk, claude_agent_sdk', () => {
       const makeBridge = loadBridge();
       const reg = makeBridge._KIND_REGISTRY;
       const keys = Object.keys(reg).sort();
-      // This assertion is intentional: adding Claude Agent SDK in Phase 2 must cause this test to fail.
-      assert.deepStrictEqual(keys, ['opencode_cli', 'openhands_sdk']);
+      // Phase 10 (VD-2174-9) added claude_agent_sdk. Phase 11/12 (OpenCode SDK,
+      // Codex SDK) must extend this list — the explicit assertion ensures any
+      // new provider lands deliberately.
+      assert.deepStrictEqual(keys, ['claude_agent_sdk', 'opencode_cli', 'openhands_sdk']);
     });
 
     test('opencode_cli has mode=inproc', () => {
@@ -134,6 +136,25 @@ describe('_node_bridge', () => {
       const makeBridge = loadBridge();
       const adapterPath = makeBridge._KIND_REGISTRY.openhands_sdk.adapter;
       assert.ok(adapterPath.endsWith('_python_adapter.py'), `expected adapter path to end with _python_adapter.py, got: ${adapterPath}`);
+    });
+
+    test('claude_agent_sdk has mode=subprocess', () => {
+      const makeBridge = loadBridge();
+      assert.strictEqual(makeBridge._KIND_REGISTRY.claude_agent_sdk.mode, 'subprocess');
+    });
+
+    test('claude_agent_sdk spawn argv invokes uv with the pinned wheel', () => {
+      const makeBridge = loadBridge();
+      const spawn = makeBridge._KIND_REGISTRY.claude_agent_sdk.spawn;
+      assert.strictEqual(spawn[0], 'uv');
+      assert.ok(
+        spawn.some((arg) => /^claude-agent-sdk==/.test(String(arg))),
+        `expected claude-agent-sdk==<version> in spawn argv, got: ${JSON.stringify(spawn)}`,
+      );
+      assert.ok(
+        spawn.includes('--kind=claude_agent_sdk'),
+        `expected --kind=claude_agent_sdk in spawn argv, got: ${JSON.stringify(spawn)}`,
+      );
     });
   });
 

@@ -14,7 +14,7 @@ provider `config:` block to select a provider.
 | --- | --- | --- | --- |
 | `opencode_cli` | stable | `opencode-mock`, `opencode-anthropic` | In-process; requires `opencode` binary on `PATH`. |
 | `openhands_sdk` | stable | `mock/openhands-mock`, `openhands/anthropic-claude-3-5-sonnet` | Subprocess via `uv run --with openhands-sdk==1.22.1`; supports multi-turn. |
-| `claude_agent_sdk` | planned | — | Phase 2 (v1.1.0). |
+| `claude_agent_sdk` | stable | `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-haiku-4-5` (aliases: `opus`, `sonnet`, `haiku`) | Subprocess via `uv run --with claude-agent-sdk==0.2.85`; async lifecycle; multi-turn via stateful `ClaudeSDKClient`; default tools `Read`/`Write`/`Edit`/`Glob`/`Grep` (Bash & web gated via `permissions.allow_shell` / `allow_web`). |
 | `opencode_sdk` | planned | — | Phase 3 (v1.2.0). |
 | `codex_sdk` | planned | — | Phase 4 (v1.3.0). |
 
