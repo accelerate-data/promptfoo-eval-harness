@@ -1,0 +1,32 @@
+# config/sdk-pins.toml — framework-owned, single source of truth for SDK versions
+# and per-provider env allowlists. See spec §6.4.
+#
+# Consumers CANNOT override per-repo. CVE in a pinned version → harness patch
+# release; consumers run `npm update`.
+
+[openhands_sdk]
+version = "1.22.1"
+python = ">=3.12,<3.14"
+# extras: empty — confirmed by spike A.0 (no extras group required).
+# If a future version requires extras (e.g. ["tools"]), update here AND
+# every `uv run --with openhands-sdk==...` call site in spec §2.6 / §6.3.
+extras = []
+# Env vars forwarded to the Python subprocess. All other keys matching
+# secret patterns (*_API_KEY, *_TOKEN, *_SECRET, etc.) are stripped. See §7.1.
+env_allowlist = [
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "OPENROUTER_API_KEY",
+  "OPENHANDS_SUPPRESS_BANNER",
+]
+
+[opencode_cli]
+# OpenCode CLI is system-installed. Harness verifies `opencode --version` against this.
+min_version = "0.1.0"
+# Env vars forwarded to the opencode subprocess (matches opencode-cli-provider.js usage).
+env_allowlist = [
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "OPENCODE_CONFIG",
+  "XDG_STATE_HOME",
+]
