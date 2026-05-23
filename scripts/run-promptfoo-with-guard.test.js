@@ -5,6 +5,7 @@ const {
   ALLOWED_ARTIFACT_PREFIXES,
   PROMPTFOO_EVAL_RESULT_FAILURE_STATUS,
   applyDefaultEvalConcurrency,
+  assertWorkspaceClean,
   detectCleanupViolations,
   main,
   materializeInvocation,
@@ -639,4 +640,106 @@ test('main still fails for dirty paths outside allowed roots after config materi
   } finally {
     console.error = originalError;
   }
+});
+
+// ---------------------------------------------------------------------------
+// E.24 — Workspace post-run assertion (spec §7.3)
+// ---------------------------------------------------------------------------
+
+// assertWorkspaceClean uses injectable deps so we can test without real filesystem.
+
+test('assertWorkspaceClean: Case A — empty workspace dir returns 0', () => {
+  const status = assertWorkspaceClean('test-run-A', {
+    readdirSync: () => [],
+    log: () => {},
+    error: () => {},
+  });
+  assert.equal(status, 0);
+});
+
+test('assertWorkspaceClean: Case B — leftover file returns 1 with WORKSPACE_DIRTY message', () => {
+  const errors = [];
+  // Simulate a directory entry object with a .name property
+  const fakeEntry = { name: 'leftover.txt' };
+  const status = assertWorkspaceClean('test-run-B', {
+    readdirSync: () => [fakeEntry],
+    log: () => {},
+    error: (msg) => errors.push(msg),
+  });
+  assert.equal(status, 1);
+  assert.equal(errors.length, 1);
+  assert.ok(errors[0].includes('WORKSPACE_DIRTY'), `expected WORKSPACE_DIRTY in: ${errors[0]}`);
+  assert.ok(errors[0].includes('leftover.txt'), `expected filename in: ${errors[0]}`);
+});
+
+test('assertWorkspaceClean: Case C — AD_EVALS_KEEP_WORKSPACE=1 with leftovers returns 0', () => {
+  const origEnv = process.env.AD_EVALS_KEEP_WORKSPACE;
+  process.env.AD_EVALS_KEEP_WORKSPACE = '1';
+  try {
+    const logs = [];
+    const fakeEntry = { name: 'leftover.txt' };
+    const status = assertWorkspaceClean('test-run-C', {
+      readdirSync: () => [fakeEntry],
+      log: (msg) => logs.push(msg),
+      error: () => {},
+    });
+    assert.equal(status, 0);
+    assert.ok(logs.some((l) => l.includes('skipped')), `expected "skipped" in logs: ${logs}`);
+  } finally {
+    if (origEnv === undefined) {
+      delete process.env.AD_EVALS_KEEP_WORKSPACE;
+    } else {
+      process.env.AD_EVALS_KEEP_WORKSPACE = origEnv;
+    }
+  }
+});
+
+test('assertWorkspaceClean: Case D — non-existent workspace dir returns 0', () => {
+  const enoent = Object.assign(new Error('no such file'), { code: 'ENOENT' });
+  const status = assertWorkspaceClean('test-run-D', {
+    readdirSync: () => { throw enoent; },
+    log: () => {},
+    error: () => {},
+  });
+  assert.equal(status, 0);
+});
+
+test('assertWorkspaceClean: non-ENOENT error returns 1', () => {
+  const other = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+  const status = assertWorkspaceClean('test-run-E', {
+    readdirSync: () => { throw other; },
+    log: () => {},
+    error: () => {},
+  });
+  assert.equal(status, 1);
+});
+
+test('assertWorkspaceClean: empty runId skips assertion and returns 0', () => {
+  const status = assertWorkspaceClean('', {
+    readdirSync: () => { throw new Error('should not be called'); },
+    log: () => {},
+    error: () => {},
+  });
+  assert.equal(status, 0);
+});
+
+test('main passes assertWorkspaceClean result through on success exit', () => {
+  const snapshots = [
+    { tracked: new Set(), untracked: new Set() },
+    { tracked: new Set(), untracked: new Set() },
+  ];
+  const wsResults = [1];  // first call returns dirty
+
+  const status = main(
+    ['eval', '-c', 'a.yaml'],
+    {
+      collectGitSnapshot: () => snapshots.shift(),
+      detectCleanupViolations: () => [],
+      formatViolationMessage: () => 'unused',
+      runPromptfooInvocation: () => 0,
+      assertWorkspaceClean: () => wsResults.shift() ?? 0,
+    },
+  );
+
+  assert.equal(status, 1);
 });

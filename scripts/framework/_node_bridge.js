@@ -17,11 +17,50 @@
  *   openhands_sdk → subprocess via _python_adapter.py + NDJSON IPC (spec §2.3)
  */
 
+const fs = require('node:fs');
 const path = require('node:path');
 
 const { loadSdkPins } = require('./sdk-pins');
 const { getGlobalLimit, makeConcurrencyGate } = require('./concurrency');
 const { redact } = require('./secret_redactor');
+
+// ---------------------------------------------------------------------------
+// Workspace helpers (spec §7.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the per-case workspace directory path.
+ * Base: tests/evals/.tmp/workspaces/<run_id>/<case_id>/
+ */
+function _workspacePath(runId, caseId) {
+  return path.join('tests', 'evals', '.tmp', 'workspaces', runId || '_default', caseId || '_default');
+}
+
+/**
+ * Create the per-case workspace directory (mkdirSync, recursive).
+ * No-op when AD_EVALS_KEEP_WORKSPACE is set (dir may already exist from a prior run).
+ */
+function _ensureWorkspace(runId, caseId) {
+  const dir = _workspacePath(runId, caseId);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/**
+ * Remove the per-case workspace directory.
+ * Skipped when AD_EVALS_KEEP_WORKSPACE=1 (debug escape hatch, spec §7.3).
+ */
+function _cleanWorkspace(runId, caseId) {
+  if (process.env.AD_EVALS_KEEP_WORKSPACE === '1' || process.env.AD_EVALS_KEEP_WORKSPACE === 'true') {
+    return;
+  }
+  const dir = _workspacePath(runId, caseId);
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch (_) {
+    /* best-effort */
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Spawn injection point — tests can override _spawnImpl to stub child processes
@@ -512,6 +551,12 @@ class HarnessBridgeProvider {
     let attemptedStart = 0;
     let attemptedInput = '';
 
+    // Create per-case workspace and forward its path in cfg.options.workspace_dir (spec §7.3).
+    const runId = process.env.AD_EVALS_RUN_ID || '';
+    const caseId = cfg.case_id || context?.vars?.case_id || '';
+    const workspaceDir = _ensureWorkspace(runId, caseId);
+    const cfgWithWorkspace = { ...cfg, workspace_root: workspaceDir };
+
     try {
       child = _getSpawn()(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'], env });
 
@@ -527,9 +572,9 @@ class HarnessBridgeProvider {
         }
       });
 
-      // Init handshake
+      // Init handshake — include workspace_dir in config so the adapter can pass it to the SDK.
       const initResp = await innerLimit(() =>
-        _ipcSend(child, { type: 'init', id: 'bridge-init', config: cfg }, { timeoutMs: subprocessTimeoutMs }),
+        _ipcSend(child, { type: 'init', id: 'bridge-init', config: cfgWithWorkspace }, { timeoutMs: subprocessTimeoutMs }),
       );
       if (initResp.type === 'error') {
         const err = normalizeErr(initResp.error);
@@ -614,6 +659,9 @@ class HarnessBridgeProvider {
           /* best-effort */
         }
       }
+      // Clean up per-case workspace after shutdown (success and error paths).
+      // Skipped when AD_EVALS_KEEP_WORKSPACE=1 (debug mode, spec §7.3).
+      _cleanWorkspace(runId, caseId);
     }
   }
 }
@@ -648,6 +696,8 @@ makeBridge._KIND_REGISTRY = KIND_REGISTRY;
 makeBridge._parseProviderConfig = parseProviderConfig;
 makeBridge._parseTurns = parseTurns;
 makeBridge._normalizeErr = normalizeErr;
+makeBridge._workspacePath = _workspacePath;
+makeBridge._cleanWorkspace = _cleanWorkspace;
 // Spawn injection for tests (avoids native module cache issues in Node 24)
 makeBridge._setSpawnImpl = (fn) => { _spawnImpl = fn; };
 makeBridge._clearSpawnImpl = () => { _spawnImpl = null; };

@@ -5,8 +5,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
 # Ensure providers dir is on sys.path for direct import.
 _PROVIDERS_DIR = Path(__file__).resolve().parent
 if str(_PROVIDERS_DIR) not in sys.path:
@@ -90,7 +88,7 @@ def test_bearer_token_case_insensitive():
 def test_gcp_private_key_block_replaced():
     snippet = (
         '{"type":"service_account","private_key":"-----BEGIN PRIVATE KEY-----'
-        "\\nMIIEvAIBADANBgkqhkiG9w0B\\n-----END PRIVATE KEY-----\\n\"}"
+        '\\nMIIEvAIBADANBgkqhkiG9w0B\\n-----END PRIVATE KEY-----\\n"}'
     )
     out = redact(snippet)
     assert "BEGIN PRIVATE KEY" not in out

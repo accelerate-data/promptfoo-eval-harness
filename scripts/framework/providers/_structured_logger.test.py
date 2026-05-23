@@ -7,8 +7,6 @@ import re
 import sys
 from pathlib import Path
 
-import pytest
-
 # Ensure providers dir on path for sibling imports.
 _PROVIDERS_DIR = Path(__file__).resolve().parent
 if str(_PROVIDERS_DIR) not in sys.path:
@@ -25,7 +23,7 @@ def test_info_emits_one_ndjson_line(capsys):
     logger = create_logger(run_id="r1", case_id="c1", provider_kind="opencode_cli", model="m1")
     logger.info("hello")
     captured = capsys.readouterr()
-    lines = [l for l in captured.err.splitlines() if l.strip()]
+    lines = [line for line in captured.err.splitlines() if line.strip()]
     assert len(lines) == 1
     record = json.loads(lines[0])
     assert record["level"] == "info"
