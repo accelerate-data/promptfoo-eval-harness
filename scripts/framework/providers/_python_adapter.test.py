@@ -11,14 +11,10 @@ Run with:
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import Any
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -250,9 +246,10 @@ class TestErrorHandling:
         import tempfile
         import textwrap
 
-        evil_provider_code = textwrap.dedent("""
+        providers_dir = "scripts/framework/providers"
+        evil_provider_code = textwrap.dedent(f"""
             import sys, os
-            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'scripts', 'framework', 'providers'))
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '{providers_dir}'))
             from _contract import ProviderConfig, FinalResult, TurnResult, ToolCallRecord
 
             class _Session:
@@ -265,7 +262,7 @@ class TestErrorHandling:
                 raise RuntimeError("intentional turn error for testing")
 
             def finalize(session):
-                return FinalResult(final_text="", turns_completed=0, tool_calls=[], metadata={})
+                return FinalResult(final_text="", turns_completed=0, tool_calls=[], metadata={{}})
 
             def shutdown(session):
                 pass
@@ -277,17 +274,13 @@ class TestErrorHandling:
             (evil_path / "__init__.py").write_text("")
             (evil_path / "provider.py").write_text(evil_provider_code)
 
-            # Patch sys.path + registry by setting PYTHONPATH env
-            env = {**os.environ, "PYTHONPATH": str(tmpdir) + os.pathsep + str(REPO_ROOT)}
-
             # We can't easily patch the registry at runtime without code changes.
             # Instead we test the mock provider with a message that's valid (turn exception path
             # is tested indirectly via unknown session, which is a _AdapterError path).
             # The key assertion is: turn_ack with error does NOT kill the subprocess.
             proc = _start_adapter(kind="mock")
             try:
-                init_resp = _send_init(proc)
-                sid = init_resp["session_id"]
+                _send_init(proc)
                 # Send bad session to trigger turn error path
                 resp = _send(proc, {"type": "turn", "id": "t1", "session_id": "bad-sid", "message": "x"})
                 assert resp["type"] == "turn_ack"

@@ -71,3 +71,99 @@ Both files define the 4-method contract (spec §1.1):
 | turn | `def turn(self, session: Session, message: str) -> TurnResult` | `turn(session: Session, message: string): TurnResult \| Promise<TurnResult>` |
 | finalize | `def finalize(self, session: Session) -> FinalResult` | `finalize(session: Session): FinalResult \| Promise<FinalResult>` |
 | shutdown | `def shutdown(self, session: Session) -> None` | `shutdown(session: Session): void \| Promise<void>` |
+
+---
+
+## IPC Wire Format
+
+The Node bridge (`scripts/framework/_node_bridge.js`) communicates with the Python
+adapter (`scripts/framework/providers/_python_adapter.py`) over the subprocess's
+stdio using **Newline-Delimited JSON (NDJSON)** per spec §2.3.
+
+**Framing rules:**
+
+- One JSON object per line, terminated by `\n` (never `\r\n`).
+- Each message is a complete JSON object — no multi-line payloads.
+- Logging goes to **stderr only** — stdout carries IPC messages exclusively.
+
+### Request message types (bridge → adapter)
+
+| Type | Required fields | Optional fields | Description |
+| --- | --- | --- | --- |
+| `init` | `id`, `config` | — | Open a new session. `config` is a `ProviderConfig` object (see parity table). |
+| `turn` | `id`, `session_id`, `message` | — | Run one conversation turn in an existing session. |
+| `finalize` | `id`, `session_id` | — | Close the session and return summary metadata. |
+| `shutdown` | `id`, `session_id` | — | Shut down the adapter cleanly. Process exits 0 after emitting `shutdown_ack`. |
+
+All request messages carry an `id` string that the adapter echoes in its response,
+enabling the bridge to correlate concurrent requests. The `id` is opaque — the
+bridge uses values like `"bridge-init"`, `"bridge-turn-0"`, `"bridge-final"`,
+`"bridge-shutdown"`.
+
+### Response message types (adapter → bridge)
+
+| Type | Required fields | Optional fields | Description |
+| --- | --- | --- | --- |
+| `init_ack` | `id`, `session_id` | — | Session opened successfully. `session_id` is the opaque handle for subsequent messages. |
+| `turn_ack` | `id`, `text`, `tool_calls`, `error`, `raw` | — | Turn completed. `error` is `null` on success or a `ProviderError` dict on failure (see §error field). Subprocess stays alive either way. |
+| `finalize_ack` | `id`, `cost_usd`, `tokens`, `transcript_summary` | — | Session finalized. |
+| `shutdown_ack` | `id` | — | Adapter has shut down all sessions and will exit 0. |
+| `error` | `id`, `error` | — | Fatal adapter-level error (e.g., `UNSUPPORTED_KIND` at startup, `BAD_INPUT` from malformed JSON). The `error` field is a `ProviderError` dict. See §Error Envelopes. |
+
+**The `error` field in `turn_ack`** (see also the `ProviderError` row in the parity
+table above): when a turn fails without killing the subprocess (e.g., `UNKNOWN_SESSION`,
+an exception inside `provider.turn()`), the adapter emits a `turn_ack` with
+`error: { code, message, retryable }` populated and the subprocess continues
+accepting requests. This is distinct from a top-level `error` message which signals
+a fatal condition.
+
+---
+
+## Error Envelopes
+
+Every error the bridge surfaces to Promptfoo carries a `{ code, message, retryable }`
+object. The codes below are the canonical set for Phase 1:
+
+| Code | Raised by | `retryable` | Semantics |
+| --- | --- | --- | --- |
+| `UNSUPPORTED_KIND` | Bridge or adapter | `false` | `provider_kind` not in `KIND_REGISTRY` (bridge) or `_PROVIDER_REGISTRY` (adapter). |
+| `BAD_CONFIG` | Bridge | `false` | Constructor config missing required field (`provider_kind`) or not an object. |
+| `BAD_INPUT` | Adapter | `false` | Malformed JSON line received on stdin, or `init.config` is not a JSON object. |
+| `SUBPROCESS_CRASH` | Bridge | `true` | Subprocess stdout closed unexpectedly, or subprocess emitted non-parseable NDJSON. |
+| `SUBPROCESS_TIMEOUT` | Bridge | `true` | IPC round-trip exceeded `AD_EVALS_SUBPROCESS_TIMEOUT_MS` (default 120 s) or `SIGTERM`/`SIGKILL` sequence was used. |
+| `UNKNOWN_SESSION` | Adapter | `false` | `session_id` in a `turn` or `finalize` request does not match any open session. Returned in `turn_ack.error`, not as a top-level `error`, so the subprocess stays alive. |
+
+All error messages are sanitized before crossing the IPC boundary (no secrets, no full
+paths). Full redaction patterns land in Phase 7; Phase 1 uses a placeholder redactor.
+
+---
+
+## Subprocess Lifecycle
+
+The adapter process follows a strict 4-message sequence per case:
+
+```text
+[bridge]                         [adapter subprocess]
+  spawn uv … _python_adapter.py
+  ──── {"type":"init", …} ──────►  _handle_init() → {"type":"init_ack", "session_id":"…"}
+  ◄──── {"type":"init_ack"} ──────
+
+  ──── {"type":"turn", …} ──────►  _handle_turn() → {"type":"turn_ack", …}
+  ◄──── {"type":"turn_ack"} ──────
+          (repeat N times)
+
+  ──── {"type":"finalize", …} ──►  _handle_finalize() → {"type":"finalize_ack", …}
+  ◄──── {"type":"finalize_ack"} ──
+
+  ──── {"type":"shutdown", …} ──►  _handle_shutdown() → {"type":"shutdown_ack"} → exit 0
+  ◄──── {"type":"shutdown_ack"} ──
+  bridge closes stdin
+                                    process exits 0
+```
+
+Lifecycle invariants (spec §1.4):
+
+- `init` may emit `error` on bad config — adapter does NOT call `shutdown` (no session exists yet).
+- `shutdown` is sent by the bridge in a `finally` block — always executed even if turns fail.
+- `shutdown` is idempotent: a second call is a no-op (adapter ignores unknown session IDs).
+- If the subprocess exits before `shutdown_ack`, the bridge performs `SIGTERM → 5 s grace → SIGKILL`.

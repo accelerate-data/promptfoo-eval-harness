@@ -464,6 +464,158 @@ describe('_node_bridge', () => {
         },
       );
     });
+
+    // -----------------------------------------------------------------------
+    // Error envelope tests (spec §2.4) — one test per code the bridge can surface.
+    // -----------------------------------------------------------------------
+
+    test('error envelope: SUBPROCESS_CRASH when subprocess stdout closes during init', async () => {
+      // Subprocess exits before emitting init_ack → _ipcSend rejects with SUBPROCESS_CRASH.
+      await withSpawnStub(
+        () => {
+          const child = makeMockChild([]);
+          // Emit end immediately (no responses queued)
+          setTimeout(() => child.stdout.emit('end'), 5);
+          return child;
+        },
+        async (makeBridge) => {
+          const provider = makeBridge({ config: makeTestConfig({ provider_label: 'crash-init' }) });
+          const result = await provider.callApi('hello', { vars: {} });
+          assert.ok(result.error, 'should have error');
+          assert.ok(result.metadata, 'metadata must be present on SUBPROCESS_CRASH');
+          // The error message should mention crash or subprocess
+          assert.ok(
+            typeof result.error === 'string' && (result.error.includes('stdout') || result.error.includes('crash') || result.error.includes('closed')),
+            `expected SUBPROCESS_CRASH message, got: ${result.error}`,
+          );
+        },
+      );
+    });
+
+    test('error envelope: SUBPROCESS_CRASH when subprocess emits malformed NDJSON', async () => {
+      // Subprocess emits non-JSON bytes → _ipcSend parses fail → SUBPROCESS_CRASH.
+      await withSpawnStub(
+        () => {
+          // We build a child whose stdout emits bad JSON on the first write
+          const stdin = new EventEmitter();
+          stdin.write = (data) => {
+            // After first write, emit malformed JSON
+            setTimeout(() => {
+              child.stdout.emit('data', Buffer.from('not valid json at all\n'));
+            }, 5);
+            return true;
+          };
+          stdin.end = () => {};
+          const stdout = new EventEmitter();
+          const stderr = new EventEmitter();
+          const child = new EventEmitter();
+          child.stdin = stdin;
+          child.stdout = stdout;
+          child.stderr = stderr;
+          child.exitCode = null;
+          child.kill = () => { child.exitCode = 1; };
+          child.pid = 11111;
+          return child;
+        },
+        async (makeBridge) => {
+          const provider = makeBridge({ config: makeTestConfig({ provider_label: 'bad-json' }) });
+          const result = await provider.callApi('hello', { vars: {} });
+          assert.ok(result.error, 'should have error on malformed NDJSON');
+          assert.ok(result.metadata, 'metadata must be present');
+        },
+      );
+    });
+
+    test('error envelope: SUBPROCESS_TIMEOUT when IPC response is delayed past timeout', async () => {
+      // Set a very short subprocess timeout via env var; the mock child never responds.
+      const prev = process.env.AD_EVALS_SUBPROCESS_TIMEOUT_MS;
+      process.env.AD_EVALS_SUBPROCESS_TIMEOUT_MS = '50';
+      try {
+        await withSpawnStub(
+          () => {
+            // Child that never writes anything — timeout will fire first.
+            const stdin = new EventEmitter();
+            stdin.write = () => true;
+            stdin.end = () => {};
+            const stdout = new EventEmitter();
+            const stderr = new EventEmitter();
+            const child = new EventEmitter();
+            child.stdin = stdin;
+            child.stdout = stdout;
+            child.stderr = stderr;
+            child.exitCode = null;
+            child.kill = (sig) => { child.exitCode = sig === 'SIGKILL' ? 137 : 1; setImmediate(() => stdout.emit('end')); };
+            child.pid = 22222;
+            return child;
+          },
+          async (makeBridge) => {
+            const provider = makeBridge({ config: makeTestConfig({ provider_label: 'timeout-test' }) });
+            const result = await provider.callApi('hello', { vars: {} });
+            assert.ok(result.error, 'should have error on timeout');
+            assert.ok(result.metadata, 'metadata must be present on SUBPROCESS_TIMEOUT');
+            // The normalizeErr call will turn SUBPROCESS_TIMEOUT code into message
+            assert.ok(
+              typeof result.error === 'string' && result.error.includes('timeout'),
+              `expected timeout message, got: ${result.error}`,
+            );
+          },
+        );
+      } finally {
+        if (prev === undefined) {
+          delete process.env.AD_EVALS_SUBPROCESS_TIMEOUT_MS;
+        } else {
+          process.env.AD_EVALS_SUBPROCESS_TIMEOUT_MS = prev;
+        }
+      }
+    });
+
+    test('error envelope: UNKNOWN_SESSION propagated from subprocess turn_ack error field', async () => {
+      // Subprocess returns turn_ack with error.code = UNKNOWN_SESSION —
+      // bridge should surface that in the result error.
+      await withSpawnStub(
+        () => makeMockChild([
+          { type: 'init_ack', id: 'bridge-init', session_id: 'sess-us' },
+          {
+            type: 'turn_ack',
+            id: 'bridge-turn-0',
+            text: '',
+            tool_calls: [],
+            error: { code: 'UNKNOWN_SESSION', message: 'session not found', retryable: false },
+            raw: {},
+          },
+        ]),
+        async (makeBridge) => {
+          const provider = makeBridge({ config: makeTestConfig({ provider_label: 'unknown-sess' }) });
+          const result = await provider.callApi('hello', { vars: {} });
+          assert.ok(result.error, 'should have error when turn_ack carries UNKNOWN_SESSION');
+          assert.ok(result.metadata, 'metadata must be present');
+          // The bridge propagates the error message from the turn_ack
+          assert.ok(
+            typeof result.error === 'string' && result.error.includes('session'),
+            `expected session-not-found message, got: ${result.error}`,
+          );
+        },
+      );
+    });
+
+    test('error envelope: BAD_INPUT propagated from subprocess error response', async () => {
+      // Subprocess returns a top-level error with code BAD_INPUT (e.g., malformed init).
+      await withSpawnStub(
+        () => makeMockChild([
+          {
+            type: 'error',
+            id: 'bridge-init',
+            error: { code: 'BAD_INPUT', message: 'init.config must be a JSON object', retryable: false },
+          },
+        ]),
+        async (makeBridge) => {
+          const provider = makeBridge({ config: makeTestConfig({ provider_label: 'bad-input' }) });
+          const result = await provider.callApi('hello', { vars: {} });
+          assert.ok(result.error, 'should have error when subprocess emits BAD_INPUT');
+          assert.ok(result.metadata, 'metadata must be present');
+        },
+      );
+    });
   });
 
   describe('concurrency', () => {
