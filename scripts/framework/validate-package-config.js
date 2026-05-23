@@ -13,12 +13,13 @@
  *
  * Rules (spec §1.6 + §4.3):
  *   1. provider_kind ∈ Object.keys(kindRegistry).
- *      Reserved-but-rejected: codex_sdk (Phase 12 / v1.3.0) →
- *      exact message "provider_kind '<name>' is reserved for a future Phase
- *      and not registered in v1.0.0".
- *      Previously-reserved kinds claude_agent_sdk (Phase 10 / v1.1.0) and
- *      opencode_sdk (Phase 11 / v1.2.0) are now live and validated through
- *      the normal kindRegistry path.
+ *      As of v1.3.0 the reserved-but-rejected set is empty — all four SDK
+ *      kinds (claude_agent_sdk, opencode_sdk, codex_sdk) have shipped and
+ *      are validated through the normal kindRegistry path. claude_agent_sdk
+ *      went live in Phase 10 / v1.1.0; opencode_sdk in Phase 11 / v1.2.0;
+ *      codex_sdk in Phase 12 / v1.3.0. The RESERVED_KINDS gate is retained
+ *      as an empty set so future-phase kinds can be re-added without
+ *      reintroducing the rejection branch.
  *   2. SDK kinds (mode === 'subprocess') require a non-empty model string.
  *      If model-resolver is available (scripts/framework/model-resolver.js),
  *      the model is also validated through it. In v1.0.0 model-resolver is
@@ -35,9 +36,11 @@
 const path = require('node:path');
 
 // ---------------------------------------------------------------------------
-// Reserved kinds — registered in future phases, rejected in v1.0.0
+// Reserved kinds — registered in future phases, rejected in this release.
+// Empty as of v1.3.0 (all four SDK providers shipped). Retained as a gate so
+// future-phase kinds can be re-added without reintroducing the branch.
 // ---------------------------------------------------------------------------
-const RESERVED_KINDS = new Set(['codex_sdk']);
+const RESERVED_KINDS = new Set();
 
 // ---------------------------------------------------------------------------
 // Model resolver — optional (Phase 6). Loaded once, null if not available.

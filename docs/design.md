@@ -198,7 +198,7 @@ VD-2174-9 lands the first of the three Node-SDK-flavoured providers that piggyba
 | `openhands_sdk` | stable | subprocess (`uv run --with openhands-sdk==1.22.1`) | `mock/openhands-mock`, `openhands/anthropic-claude-3-5-sonnet` | per agent profile | per OpenHands `MCPConfig` |
 | `claude_agent_sdk` | stable | subprocess (`uv run --with claude-agent-sdk==0.2.85`) | `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-haiku-4-5` (aliases: `opus`, `sonnet`, `haiku`) | `Read`, `Write`, `Edit`, `Glob`, `Grep` | `Bash` requires `permissions.allow_shell=true`; `WebSearch`, `WebFetch`, `AskUserQuestion` require `permissions.allow_web=true` |
 | `opencode_sdk` | stable | inproc (`@opencode-ai/sdk@1.15.10`, requires Node ≥ 20) | `anthropic/claude-sonnet-4-6`, `openai/gpt-4o` (any model the OpenCode server accepts) | per OpenCode agent definition (`build` / `plan` / `general`) | per OpenCode agent definition |
-| `codex_sdk` | planned (Phase 12 / v1.3.0) | inproc | — | — | — |
+| `codex_sdk` | stable | inproc (`@openai/codex-sdk@0.133.0` + `@openai/codex@0.133.0` CLI bin, requires Node ≥ 20) | `gpt-4o`, `gpt-4.1` (any model the Codex SDK accepts) | per Codex CLI sandbox/reasoning profile | `sandbox_mode` ∈ `{read-only, workspace-write, danger-full-access}`; `model_reasoning_effort` ∈ `{low, medium, high}` |
 
 ### Subprocess shape
 
@@ -275,6 +275,40 @@ The provider's `_mapError` collapses SDK exceptions onto the contract codes:
 ### Mock-mode scenario (opencode_sdk)
 
 Layer 4 nightly coverage lives at `tests/harness-scenarios/packages/opencode-sdk-mock-multi-turn/`. `tests/_mock_opencode_sdk/register.mjs` uses ESM `Module.register()` to intercept `import('@opencode-ai/sdk')` for the provider, swapping it for the deterministic mock at `tests/_mock_opencode_sdk/sdk.mjs`. The nightly workflow scopes `NODE_OPTIONS=--import .../register.mjs` to a dedicated step so the loader hook never leaks into the other scenarios; that step runs the scenario via `node bin/ad-evals.js run tests/harness-scenarios/packages/opencode-sdk-mock-multi-turn`, which routes through `dir-walk.spawnScenario` (single-scenario bypass of `EVAL_ROOT`) since the scenario lives in the framework-owned tree.
+
+## In-proc Node provider — `codex_sdk`
+
+`provider_kind=codex_sdk` lives at `scripts/framework/providers/codex_sdk/provider.js` and is dispatched in-proc through Phase 9.5's `_dispatchInproc` (no subprocess, no NDJSON). The bridge's `KIND_REGISTRY` entry resolves to that module path so a single Promptfoo `file://` provider face still covers all five kinds uniformly. The SDK is CJS, so `require('@openai/codex-sdk')` resolves lazily inside `create()` — tests intercept the resolution through a `Module._resolveFilename` patch installed by `tests/_mock_codex_sdk/register.js`.
+
+### Session and workspace isolation
+
+`init(cfg)` reserves a per-session HOME directory via `mkdtempSync` (prefix `ad-evals-codex-home-`) so concurrent `codex_sdk` cases never share auth/config state — the Codex SDK reads HOME from `opts.env.HOME`, and the provider forwards `process.env` with `HOME` overridden to the per-session temp dir. The first `turn()` then lazily `mkdtemp`s a per-case workspace under the run's `workspace_root` and runs `git init -q --initial-branch=main` followed by `git commit --allow-empty -q -m init` with inline `-c user.email=ad-evals@local -c user.name="AD Evals"` so codex's `skipGitRepoCheck: false` accepts the workdir without depending on whatever global git identity is configured on the host. `shutdown()` best-effort removes the per-case workspace AND the per-session HOME directory.
+
+### Thread reuse for multi-turn
+
+A single `Codex` instance is constructed in `init()`. The first `turn()` calls `codex.startThread({ workingDirectory, sandboxMode, model, modelReasoningEffort })` and stores the returned `Thread` on the provider instance. Subsequent `turn()` calls reuse the same `Thread` via `thread.run({ input })`, which is how the SDK propagates conversation history across turns. `provider_test.js` locks this with a 3-turn dependency test (turn 1 stores `42`, turn 3 must recall it from the mock SDK's per-thread state).
+
+### Defaults and overrides
+
+`sandbox_mode` defaults to `workspace-write` (writes confined to the per-case workspace) and `model_reasoning_effort` defaults to `medium`. Both can be overridden through `cfg.extra.sandbox_mode` / `cfg.extra.reasoning_effort` per case. `cfg.model` is forwarded to `startThread({ model })` unchanged — any model alias accepted by the Codex SDK works; the harness does not maintain a separate alias table.
+
+### Error taxonomy (codex_sdk)
+
+The provider's `_mapError` collapses SDK exceptions onto the contract codes:
+
+| SDK signal | Contract code | Retryable |
+| --- | --- | --- |
+| HTTP 400 / `e.status === 400` | `validation` | no |
+| HTTP 401 / 403 or `/auth/i` in message | `AUTH` | no |
+| HTTP 429 | `rate_limit` | yes |
+| HTTP 5xx | `sdk_error` | yes |
+| Inline `UNSUPPORTED_MODEL` raised by SDK | `UNSUPPORTED_MODEL` | no |
+| `git init`/`mkdtemp` failure during workspace setup | `WORKSPACE_SETUP` | no |
+| Anything else | `sdk_error` | no |
+
+### Mock-mode scenario (codex_sdk)
+
+Layer 4 nightly coverage lives at `tests/harness-scenarios/packages/codex-sdk-mock-multi-turn/`. `tests/_mock_codex_sdk/register.js` patches `Module._resolveFilename` to remap `@openai/codex-sdk` to the deterministic mock at `tests/_mock_codex_sdk/sdk.js` so neither the real `@openai/codex-sdk` nor the `@openai/codex` CLI bin is spawned. The nightly workflow scopes `NODE_OPTIONS=--require .../register.js` (CJS resolver hook, not the ESM `--import` form used by `opencode_sdk`) to a dedicated step so the hook never leaks into the other scenarios; that step runs the scenario via `node bin/ad-evals.js run tests/harness-scenarios/packages/codex-sdk-mock-multi-turn`, which routes through `dir-walk.spawnScenario` (single-scenario bypass of `EVAL_ROOT`) since the scenario lives in the framework-owned tree.
 
 ## Open Questions
 
