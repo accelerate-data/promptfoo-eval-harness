@@ -1,6 +1,6 @@
 # Phase 05 — Lock OpenCode CLI Provider + Dispatch (C.13-C.15)
 
-> **Sub-issue:** VD-2174-4. **Status:** pending. **Blocked by:** phase 04.
+> **Sub-issue:** VD-2174-4. **Status:** complete. **Blocked by:** phase 04.
 > Time budget: ~2 days.
 
 ## Context Links
@@ -126,10 +126,10 @@ ad-evals run tests/harness-scenarios/packages/opencode-cli-compatibility
 
 ## Todo List
 
-- [ ] C.13: Contract lock test before any provider change.
-- [ ] C.14: Minimal refactor — provider implements §1 contract; CLI spawn unchanged.
-- [ ] C.15: Scenario authored + registered + dry-run + actual-run both green.
-- [ ] Final: `npm test`, `npm run lint:md` both green.
+- [x] C.13: Contract lock test before any provider change.
+- [x] C.14: Minimal refactor — provider implements §1 contract; CLI spawn unchanged.
+- [x] C.15: Scenario authored + registered + dry-run + actual-run both green.
+- [x] Final: `npm test` green (204/204). `npm run lint:md` fails on Phase 06's openhands_sdk/README.md only (not phase 05 files).
 
 ## Success Criteria
 
