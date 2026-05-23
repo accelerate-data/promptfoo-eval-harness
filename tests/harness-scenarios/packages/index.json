@@ -1,10 +1,25 @@
 {
   "scenarios": [
     {
-      "name": "opencode-cli-compatibility",
-      "path": "packages/opencode-cli-compatibility",
+      "name": "minimal-smoke",
+      "path": "tests/harness-scenarios/packages/minimal-smoke",
+      "provider_kinds": ["opencode_cli"],
       "requires_live_key": false,
-      "kinds": ["opencode_cli"]
+      "expected_runtime_seconds": 10
+    },
+    {
+      "name": "opencode-cli-compatibility",
+      "path": "tests/harness-scenarios/packages/opencode-cli-compatibility",
+      "provider_kinds": ["opencode_cli"],
+      "requires_live_key": false,
+      "expected_runtime_seconds": 30
+    },
+    {
+      "name": "openhands-mock-multi-turn",
+      "path": "tests/harness-scenarios/packages/openhands-mock-multi-turn",
+      "provider_kinds": ["openhands_sdk"],
+      "requires_live_key": false,
+      "expected_runtime_seconds": 30
     }
   ]
 }
