@@ -20,7 +20,7 @@
 const path = require('node:path');
 
 const { loadSdkPins } = require('./sdk-pins');
-const { getOuterLimit, makeConcurrencyGate } = require('./concurrency');
+const { getGlobalLimit, makeConcurrencyGate } = require('./concurrency');
 
 // ---------------------------------------------------------------------------
 // Spawn injection point — tests can override _spawnImpl to stub child processes
@@ -335,8 +335,10 @@ class HarnessBridgeProvider {
       };
     }
 
-    const outer = getOuterLimit();
-    return outer(() => this._dispatch(prompt, context, cfg));
+    // Acquire INNER global gate — caps ALL callApi invocations (opencode_cli +
+    // SDK kinds) regardless of provider_kind (spec §4.2, B.10).
+    const globalGate = getGlobalLimit();
+    return globalGate(() => this._dispatch(prompt, context, cfg));
   }
 
   async _dispatch(prompt, context, cfg) {
