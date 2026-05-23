@@ -20,6 +20,13 @@
       "provider_kinds": ["openhands_sdk"],
       "requires_live_key": false,
       "expected_runtime_seconds": 30
+    },
+    {
+      "name": "claude-mock-multi-turn",
+      "path": "tests/harness-scenarios/packages/claude-mock-multi-turn",
+      "provider_kinds": ["claude_agent_sdk"],
+      "requires_live_key": false,
+      "expected_runtime_seconds": 30
     }
   ]
 }

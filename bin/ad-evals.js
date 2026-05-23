@@ -379,7 +379,8 @@ function run(
     logger = console,
   } = {},
 ) {
-  const [command = 'help', ...rest] = argv;
+  const [command = 'help', ...restArgs] = argv;
+  let rest = restArgs;
   if (command === 'help' || command === '--help' || command === '-h') {
     printHelp();
     return 0;

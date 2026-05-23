@@ -1,0 +1,52 @@
+{
+  "description": "claude-mock-multi-turn — single + multi-turn claude_agent_sdk scenarios using the mock SDK (no ANTHROPIC_API_KEY required).",
+  "providers": [
+    {
+      "id": "file://../../../../scripts/framework/_node_bridge.js",
+      "label": "claude-agent-sdk/claude-mock",
+      "config": {
+        "provider_kind": "claude_agent_sdk",
+        "provider_label": "claude-agent-sdk/claude-mock",
+        "model": "sonnet"
+      }
+    }
+  ],
+  "tests": [
+    {
+      "description": "[single-turn] greeting yields Hi there!",
+      "vars": {
+        "turns": "[\"hello\"]"
+      },
+      "assert": [
+        {
+          "type": "javascript",
+          "value": "output && output.length > 0"
+        },
+        {
+          "type": "javascript",
+          "value": "output.includes('Hi there!')"
+        }
+      ]
+    },
+    {
+      "description": "[multi-turn] turn 2 must recall the number remembered in turn 1",
+      "vars": {
+        "turns": "[\"Please remember 42 for me.\", \"what number was it?\"]"
+      },
+      "assert": [
+        {
+          "type": "javascript",
+          "value": "output && output.length > 0"
+        },
+        {
+          "type": "javascript",
+          "value": "(() => { const parts = output.split('\\n---\\n'); return parts.length === 2; })()"
+        },
+        {
+          "type": "javascript",
+          "value": "output.split('\\n---\\n')[1].includes('42')"
+        }
+      ]
+    }
+  ]
+}
