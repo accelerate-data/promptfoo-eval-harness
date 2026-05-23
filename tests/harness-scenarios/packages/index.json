@@ -27,6 +27,13 @@
       "provider_kinds": ["claude_agent_sdk"],
       "requires_live_key": false,
       "expected_runtime_seconds": 30
+    },
+    {
+      "name": "opencode-sdk-mock-multi-turn",
+      "path": "tests/harness-scenarios/packages/opencode-sdk-mock-multi-turn",
+      "provider_kinds": ["opencode_sdk"],
+      "requires_live_key": false,
+      "expected_runtime_seconds": 30
     }
   ]
 }

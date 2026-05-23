@@ -13,7 +13,7 @@ const { resolveHarnessPaths } = require('../scripts/framework/paths');
 const { main: runPromptfooWithGuard } = require('../scripts/framework/run-promptfoo-with-guard');
 const { validate } = require('../scripts/framework/validate-package-config');
 const makeBridge = require('../scripts/framework/_node_bridge.js');
-const { runScenarios } = require('../scripts/framework/dir-walk');
+const { runScenarios, spawnScenario } = require('../scripts/framework/dir-walk');
 
 function bootstrapEvalRoot() {
   if (process.env.AD_EVALS_ROOT) {
@@ -426,7 +426,27 @@ function run(
     if (fsImpl.existsSync(absArg) && fsImpl.statSync(absArg).isDirectory()) {
       const directConfig = path.join(absArg, 'promptfooconfig.json');
       if (fsImpl.existsSync(directConfig)) {
-        // Single scenario dir: resolve to the config file for Promptfoo.
+        // Single scenario dir.  If it lives outside EVAL_ROOT (the framework
+        // -owned `tests/harness-scenarios/` tree), it's a self-contained
+        // scenario — invoke promptfoo directly via dir-walk's spawnScenario,
+        // matching the multi-scenario fan-out bypass-guard semantics.
+        // Otherwise (a consumer-repo scenario under EVAL_ROOT), fall through
+        // to the guarded resolve-promptfoo-config path.
+        const evalRootResolved = path.resolve(paths.evalRoot);
+        const relFromEvalRoot = path.relative(evalRootResolved, absArg);
+        const withinEvalRoot = relFromEvalRoot &&
+          !relFromEvalRoot.startsWith('..') &&
+          !path.isAbsolute(relFromEvalRoot);
+        if (!withinEvalRoot) {
+          const harnessRoot = path.resolve(__dirname, '..');
+          return spawnScenario(absArg, process.env, harnessRoot).then((r) => {
+            const status = r.exitCode === 0 ? 'PASS' : 'FAIL';
+            logger.log(`${status}  ${r.name}  (${r.durationMs}ms)`);
+            if (r.stdout) logger.log(r.stdout.trim());
+            if (r.exitCode !== 0 && r.stderr) logger.error(r.stderr.trim());
+            return r.exitCode;
+          });
+        }
         // Mutate rest in-place for buildPromptfooArgs below.
         rest = [directConfig, ...extraRunArgs];
       } else {

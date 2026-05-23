@@ -44,7 +44,7 @@ jobs:
           source $HOME/.cargo/env 2>/dev/null || true
           uv run --python 3.12 --with claude-agent-sdk==0.2.85 python -c "import claude_agent_sdk"
 
-      - name: Run all framework scenarios (mock mode, no live keys)
+      - name: Run framework scenarios except opencode_sdk (mock mode, no live keys)
         env:
           OPENCODE_MOCK_MODE: '1'
           # PYTHONPATH is colon-separated so both mock SDK shims load before the
@@ -55,4 +55,19 @@ jobs:
           # parallel runs are safe (spec §5.3 multi-scenario parallelism).
         run: |
           source $HOME/.cargo/env 2>/dev/null || true
-          node bin/ad-evals.js run tests/harness-scenarios/packages
+          node bin/ad-evals.js run \
+            tests/harness-scenarios/packages/minimal-smoke \
+            tests/harness-scenarios/packages/opencode-cli-compatibility \
+            tests/harness-scenarios/packages/openhands-mock-multi-turn \
+            tests/harness-scenarios/packages/claude-mock-multi-turn
+
+      - name: Run opencode_sdk mock scenario (mock SDK via ESM loader)
+        # NODE_OPTIONS scoped to this step only — Module.register() in
+        # register.mjs intercepts `@opencode-ai/sdk` imports for the
+        # opencode_sdk provider so no real server boots. Other scenarios
+        # never see this hook because the step boundary unsets NODE_OPTIONS.
+        env:
+          NODE_OPTIONS: --import ${{ github.workspace }}/tests/_mock_opencode_sdk/register.mjs
+        run: |
+          source $HOME/.cargo/env 2>/dev/null || true
+          node bin/ad-evals.js run tests/harness-scenarios/packages/opencode-sdk-mock-multi-turn
