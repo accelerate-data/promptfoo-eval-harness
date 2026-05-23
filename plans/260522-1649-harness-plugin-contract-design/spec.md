@@ -333,14 +333,23 @@ class FinalResult:
     tool_calls: list[ToolCallRecord]
     metadata: dict              # see Section 1.5
 
-class Session(Protocol):
-    """Opaque handle holding LLM, Agent, Tool[], Conversation."""
+# Session = LocalConversation (spike A.0 verified).
+# Conversation(agent, workspace=...) is a factory that returns LocalConversation
+# for local workspaces. Session(Protocol) is removed — no separate opaque Session
+# handle exists in the SDK; LocalConversation IS the session container.
+# Note: TurnResult is adapter-internal (not an SDK type). Adapter assembles it from
+# MessageEvent + ActionEvent objects via Conversation(callbacks=[...]).
+from openhands.sdk import Conversation, LocalConversation
+Session = LocalConversation  # type alias for adapter annotations
 
 class SDKProvider(Protocol):
-    def init(self, cfg: ProviderConfig) -> Session: ...
-    def turn(self, session: Session, message: str) -> TurnResult: ...
-    def finalize(self, session: Session) -> FinalResult: ...
-    def shutdown(self, session: Session) -> None: ...
+    def init(self, cfg: ProviderConfig) -> LocalConversation: ...
+    def turn(self, session: LocalConversation, message: str) -> TurnResult: ...
+    def finalize(self, session: LocalConversation) -> FinalResult: ...
+    def shutdown(self, session: LocalConversation) -> None:
+        # Maps to session.close(). Set delete_on_close=False at construction
+        # so bridge owns workspace cleanup per §7.3.
+        ...
 ```
 
 ### 1.3 Error taxonomy
@@ -471,17 +480,15 @@ The bridge module exposes a Promptfoo-compatible class with `id()`,
 `callApi()`, and (if needed) `cleanup()`. Provider URL takes optional
 `config.provider_kind` and `config.provider_label` injected by
 `resolve-promptfoo-config.js` from the tier config — Promptfoo passes
-these through to `callApi(prompt, context, options)` as
-`options.config.*`.
+these through to the **constructor** as `options.config.*`.
 
-> **Critical assumption — must be spike-verified.** The above relies on
-> Promptfoo's `file://` provider forwarding the per-provider `config:`
-> block verbatim (including nested objects) as the third argument to
-> `callApi`. This is the single load-bearing bridge contract. §9.2 Step
-> **A.0.B** (Promptfoo file-provider option-shape spike) gates A.5 and
-> all later work; if the shape is anything but `options.config.<keys>`,
-> the bridge design must be reworked (likely move config into `vars` or
-> emit multiple providers) before any provider code lands.
+> **Spike A.0.B result (PASS WITH SPEC EDITS).** Promptfoo's `file://`
+> provider passes the per-provider `config:` block verbatim (including
+> nested objects, arrays, and all types) to the **constructor** as
+> `options.config.*`. The `callApi` third argument only carries runtime
+> signals: `{ abortSignal }`. The bridge reads config exclusively from
+> `this.options.config` (constructor-time). See
+> `spike-promptfoo-file-provider-shape.md` for the full discrepancy table.
 
 ### 2.3 IPC protocol (JSON over stdio)
 
@@ -607,6 +614,32 @@ def _sanitize(exc):
 // scripts/framework/_node_bridge.js  (the ONLY Promptfoo provider face)
 const semaphore = require('./concurrency').global; // p-limit, cap = AD_EVALS_MAX_CONCURRENCY
 
+/**
+ * Parse vars.turns into a string[].
+ *
+ * Promptfoo's test-matrix engine expands YAML array vars into separate rows
+ * (spike A.0.B verified): context.vars.turns is NEVER a JS Array at callApi
+ * time. Consumers encode multi-turn sequences as a JSON string:
+ *
+ *   vars:
+ *     turns: '["turn 1","turn 2","turn 3"]'   # JSON-encoded array
+ *
+ * A plain (non-JSON) string is treated as a single-turn sequence.
+ * Falls back to [promptFallback] if turns is absent/empty.
+ * Returns null only if both turns and promptFallback are absent.
+ */
+function parseTurns(rawTurns, promptFallback) {
+  if (rawTurns && typeof rawTurns === 'string' && rawTurns.trim()) {
+    try {
+      const parsed = JSON.parse(rawTurns);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch (_) { /* not JSON-encoded — treat as single-turn */ }
+    return [rawTurns];
+  }
+  if (promptFallback) return [promptFallback];
+  return null;
+}
+
 class HarnessBridgeProvider {
   constructor(options) {
     this.options = options;                       // includes config.provider_kind, config.provider_label
@@ -615,8 +648,9 @@ class HarnessBridgeProvider {
   label() { return this.options.config.provider_label; }
 
   async callApi(prompt, context, options) {
-    // Promptfoo passes the *final* options here; we prefer it over constructor options.
-    const cfg = parseProviderConfig(options?.config || this.options.config);
+    // Promptfoo passes only { abortSignal } as the callApi third arg (spike-verified A.0.B).
+    // Provider config is exclusively available via this.options.config (constructor-time).
+    const cfg = parseProviderConfig(this.options.config);
     return semaphore(() => this._dispatch(prompt, context, cfg));
   }
 
@@ -643,15 +677,13 @@ class HarnessBridgeProvider {
     if (cfg.provider_kind === 'opencode_cli') {
       // OpenCode CLI is single-shot; bridge calls existing module in-process.
       // Multi-turn rejected until Phase 2.
-      // Note: empty array is truthy in JS, so `[] || X === []`. Validate
-      // explicitly per §3.2 precedence: vars.turns wins ONLY if non-empty
-      // array of strings; otherwise fall back to single `prompt`.
-      const hasTurns = Array.isArray(context?.vars?.turns) && context.vars.turns.length > 0;
-      const turns = hasTurns ? context.vars.turns : [prompt];
-      // Reject empty array AND single-turn fallback where prompt is undefined/empty.
-      // This matches SDK branch validation and §3.2 precedence rules exactly.
-      const noUsableTurn =
-        turns.length === 0 ||
+      // Note: Promptfoo expands YAML array vars into separate matrix rows (spike A.0.B).
+      // context.vars.turns is NEVER a JS Array at callApi time — it is either a
+      // JSON-encoded string (multi-turn) or a plain string (single-turn) or absent.
+      // parseTurns() decodes per §3.2 precedence rules.
+      const turns = parseTurns(context?.vars?.turns, prompt);
+      // Reject if parseTurns returned null (no usable input at all).
+      const noUsableTurn = !turns || turns.length === 0 ||
         (turns.length === 1 && (turns[0] === undefined || turns[0] === null || turns[0] === ''));
       if (noUsableTurn) {
         const err = { code: 'validation', retryable: false, message: 'no turns to send: vars.turns is empty and prompt is missing/empty' };
@@ -733,13 +765,11 @@ class HarnessBridgeProvider {
     }
 
     // SDK providers: spawn persistent subprocess, NDJSON loop.
-    // Same precedence as opencode_cli branch (§3.2): non-empty vars.turns
-    // wins; otherwise fall back to single prompt. Empty array is truthy
-    // in JS, so we cannot use `||`.
-    const sdkHasTurns = Array.isArray(context?.vars?.turns) && context.vars.turns.length > 0;
-    const turns = sdkHasTurns ? context.vars.turns : [prompt];
-    const sdkNoUsableTurn =
-      turns.length === 0 ||
+    // Same precedence as opencode_cli branch (§3.2): parseTurns decodes
+    // vars.turns (JSON-encoded string or plain string) then falls back to
+    // single prompt. Promptfoo never delivers a JS Array here (spike A.0.B).
+    const turns = parseTurns(context?.vars?.turns, prompt);
+    const sdkNoUsableTurn = !turns || turns.length === 0 ||
       (turns.length === 1 && (turns[0] === undefined || turns[0] === null || turns[0] === ''));
     if (sdkNoUsableTurn) {
       // No turns to attempt → no transcript entries (count invariant: 0 attempted = 0 entries).
@@ -884,12 +914,27 @@ Notes:
 - `parseProviderConfig` validates required fields (`provider_kind`,
   `provider_label`, `model`) and throws `validation` ProviderError if
   malformed.
+- **SDK session lifecycle (spike A.0 fix):** `provider.init()` constructs
+  `LLM + Agent + Conversation(..., delete_on_close=False)` and returns a
+  `LocalConversation`. `provider.turn()` calls `session.send_message(msg)`
+  then `session.run()` (blocks), assembles `TurnResult` from event callbacks.
+  `provider.shutdown()` calls `session.close()`. Set `delete_on_close=False`
+  so the bridge (not the SDK) owns workspace cleanup per §7.3.
+- **cost_usd source (spike A.0 fix):** Extract from
+  `session.conversation_stats.usage_to_metrics[model_name].accumulated_cost`
+  after `run()` completes. Nullable if no LLM calls were made.
 
 ---
 
 ## Section 3 — Multi-turn Conversation API
 
-### 3.1 Scripted via `vars.turns[]` (precedence rules)
+### 3.1 Scripted via `vars.turns` (precedence rules)
+
+> **Encoding requirement (spike A.0.B).** Promptfoo's test-matrix engine
+> expands YAML/JSON array-valued vars into separate rows — one `callApi`
+> invocation per element. To pass a multi-turn sequence as a single unit,
+> `vars.turns` MUST be a **JSON-encoded string** (the entire array serialized
+> as a string value). The bridge decodes it with `parseTurns()`.
 
 ```json
 {
@@ -897,11 +942,7 @@ Notes:
     {
       "description": "[smoke] multi-turn refactor flow",
       "vars": {
-        "turns": [
-          "Read src/auth.ts and summarize the auth flow.",
-          "Propose a refactor to use the new SessionManager.",
-          "Implement the refactor and run the test suite."
-        ]
+        "turns": "[\"Read src/auth.ts and summarize the auth flow.\",\"Propose a refactor to use the new SessionManager.\",\"Implement the refactor and run the test suite.\"]"
       },
       "assert": [
         { "type": "javascript", "value": "context.metadata.turns_completed === 3" },
@@ -912,15 +953,39 @@ Notes:
 }
 ```
 
+In YAML (more readable):
+
+```yaml
+tests:
+  - description: "[smoke] multi-turn refactor flow"
+    vars:
+      turns: >-
+        ["Read src/auth.ts and summarize the auth flow.",
+         "Propose a refactor to use the new SessionManager.",
+         "Implement the refactor and run the test suite."]
+    assert:
+      - type: javascript
+        value: "context.metadata.turns_completed === 3"
+      - type: contains
+        value: "SessionManager"
+```
+
 ### 3.2 Precedence
 
-1. If `vars.turns` is a non-empty array of strings → use as turn sequence.
-2. Else if `prompts:` resolves to a non-empty string → use as single turn.
-3. Else fail with `validation` error.
+1. If `vars.turns` is a non-empty **JSON-encoded string** that parses to a
+   non-empty string array → decode and use as the turn sequence.
+2. Else if `vars.turns` is a non-empty plain string → treat as single turn.
+3. Else if `prompts:` resolves to a non-empty string → use as single turn.
+4. Else fail with `validation` error.
 
-If both are set, **`vars.turns` wins** and `prompts:` content is ignored
-(adapter prints a warning to stderr — also surfaced in metadata as
-`metadata.warnings: ["prompts ignored: vars.turns set"]`).
+If both `vars.turns` and `prompts:` are set, **`vars.turns` wins** and
+`prompts:` content is ignored (adapter prints a warning to stderr — also
+surfaced in metadata as `metadata.warnings: ["prompts ignored: vars.turns set"]`).
+
+Note: do NOT declare `vars.turns` as a YAML/JSON array. Promptfoo's
+test-matrix engine would expand it into separate rows — one `callApi`
+invocation per element — defeating multi-turn sequencing. Always pass the
+full turn list as a JSON-encoded string value.
 
 ### 3.2.1 What Promptfoo's assertion layer sees during multi-turn
 
@@ -929,7 +994,7 @@ bridge's `callApi`. That rendered prompt is **ignored** when `vars.turns`
 wins (per precedence above), but the bridge must still return a single
 `output` field for Promptfoo's assertion engine. Canonical semantics:
 
-| Field | Value when `vars.turns.length > 1` | Value for single-turn |
+| Field | Value when `vars.turns` decodes to N>1 turns | Value for single-turn |
 | --- | --- | --- |
 | `output` | All per-turn outputs joined with `\n---\n` (full transcript) | The single turn's text |
 | `metadata.final_turn_output` | Last turn's text only | Same as `output` |
