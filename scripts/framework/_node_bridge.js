@@ -72,6 +72,22 @@ function _getSpawn() {
 }
 
 // ---------------------------------------------------------------------------
+// In-proc provider cache (Phase 9.5, spec §2.5 amendment).
+// Maps `kind` → resolved provider instance (the value `await create()` returns).
+// Re-used across callApi invocations to avoid re-importing the module on every
+// row. Sessions are NOT cached — `init` is called per callApi.
+// ---------------------------------------------------------------------------
+const _inprocProviderCache = new Map();
+
+/** @type {object|null} Last init() session — exposed for Layer 2 tests only. */
+let _lastInprocSessionRef = null;
+
+function _clearInprocCache() {
+  _inprocProviderCache.clear();
+  _lastInprocSessionRef = null;
+}
+
+// ---------------------------------------------------------------------------
 // KIND_REGISTRY — maps provider_kind → dispatch strategy.
 // Exactly two entries in v1.0.0. The test asserts this count so adding
 // Claude Agent SDK in Phase 2 forces a deliberate edit.
@@ -524,6 +540,24 @@ class HarnessBridgeProvider {
     }
 
     // -----------------------------------------------------------------------
+    // Generic in-proc dispatch (Phase 9.5, spec §2.5 amendment).
+    // Any non-opencode_cli kind with `mode === 'inproc'` and a `module` path
+    // routes here. Loads the module once (cached), drives the same
+    // init → turn[*] → finalize → shutdown lifecycle as the subprocess path.
+    // -----------------------------------------------------------------------
+    {
+      const reg = KIND_REGISTRY[kind];
+      if (reg && reg.mode === 'inproc' && reg.module) {
+        return await this._dispatchInproc(kind, reg, cfg, context, prompt, {
+          startedAt,
+          transcript,
+          turnOutputs,
+          latencyPerTurn,
+        });
+      }
+    }
+
+    // -----------------------------------------------------------------------
     // SDK kinds — subprocess + NDJSON IPC
     // -----------------------------------------------------------------------
     const turns = parseTurns(context?.vars?.turns, prompt);
@@ -673,6 +707,147 @@ class HarnessBridgeProvider {
       _cleanWorkspace(runId, caseId);
     }
   }
+
+  /**
+   * Generic in-proc dispatch (Phase 9.5). Loads the registry-declared module,
+   * caches the provider instance per `kind`, and drives the same lifecycle as
+   * the subprocess path. Workspace injection is symmetric with the SDK path.
+   *
+   * @param {string} kind
+   * @param {{ mode: 'inproc', module: string, factoryName?: string }} registry
+   * @param {object} cfg
+   * @param {object} context
+   * @param {string} prompt
+   * @param {{ startedAt: number, transcript: object[], turnOutputs: string[], latencyPerTurn: number[] }} accum
+   */
+  async _dispatchInproc(kind, registry, cfg, context, prompt, accum) {
+    const { startedAt, transcript, turnOutputs, latencyPerTurn } = accum;
+
+    const turns = parseTurns(context?.vars?.turns, prompt);
+    const noUsableTurn =
+      !turns ||
+      turns.length === 0 ||
+      (turns.length === 1 && (turns[0] === undefined || turns[0] === null || turns[0] === ''));
+    if (noUsableTurn) {
+      const err = { code: 'validation', retryable: false, message: 'vars.turns is empty' };
+      return {
+        output: '',
+        error: err.message,
+        metadata: baseMetadata(cfg, {
+          provider_error: err,
+          turns_completed: 0,
+          final_turn_output: '',
+          transcript,
+          latency_ms_per_turn: latencyPerTurn,
+          latency_ms_total: Date.now() - startedAt,
+        }),
+      };
+    }
+
+    const runId = process.env.AD_EVALS_RUN_ID || '';
+    const caseId = cfg.case_id || context?.vars?.case_id || '';
+    const workspaceDir = _ensureWorkspace(runId, caseId);
+    const cfgWithWorkspace = { ...cfg, workspace_root: workspaceDir };
+
+    // Resolve + cache provider instance once per kind.
+    let provider = _inprocProviderCache.get(kind);
+    if (!provider) {
+      let mod;
+      try {
+        mod = require(registry.module);
+      } catch (e) {
+        const err = normalizeErr(e);
+        return errorReturn(cfg, err, transcript, turnOutputs, latencyPerTurn, 0, startedAt);
+      }
+      const factoryName = registry.factoryName || 'create';
+      const factory = mod && mod[factoryName];
+      if (typeof factory !== 'function') {
+        const err = {
+          code: 'BAD_CONFIG',
+          message: `provider module ${registry.module} missing export ${JSON.stringify(factoryName)}`,
+          retryable: false,
+        };
+        return errorReturn(cfg, err, transcript, turnOutputs, latencyPerTurn, 0, startedAt);
+      }
+      try {
+        provider = await factory();
+      } catch (e) {
+        const err = normalizeErr(e);
+        return errorReturn(cfg, err, transcript, turnOutputs, latencyPerTurn, 0, startedAt);
+      }
+      _inprocProviderCache.set(kind, provider);
+    }
+
+    let session = null;
+    try {
+      session = await provider.init(cfgWithWorkspace);
+      _lastInprocSessionRef = session;
+
+      let lastTurn = null;
+      for (let i = 0; i < turns.length; i++) {
+        const turnStart = Date.now();
+        let res;
+        try {
+          res = await provider.turn(session, turns[i]);
+        } catch (e) {
+          const err = normalizeErr(e);
+          const turnLatency = Date.now() - turnStart;
+          latencyPerTurn.push(turnLatency);
+          pushTurn(transcript, i, turns[i], '', turnLatency, [], err);
+          return errorReturn(cfg, err, transcript, turnOutputs, latencyPerTurn, i, startedAt);
+        }
+        const turnLatency = Date.now() - turnStart;
+        latencyPerTurn.push(turnLatency);
+
+        if (res && res.error) {
+          const err = normalizeErr(res.error);
+          pushTurn(transcript, i, turns[i], res.output || '', turnLatency, res.tool_calls || [], err);
+          return errorReturn(cfg, err, transcript, turnOutputs, latencyPerTurn, i, startedAt);
+        }
+
+        const text = (res && res.output) || '';
+        const toolCalls = (res && res.tool_calls) || [];
+        turnOutputs.push(text);
+        pushTurn(transcript, i, turns[i], text, turnLatency, toolCalls);
+        lastTurn = res;
+      }
+
+      let finalResult = null;
+      try {
+        finalResult = await provider.finalize(session);
+      } catch (e) {
+        const err = normalizeErr(e);
+        return errorReturn(cfg, err, transcript, turnOutputs, latencyPerTurn, turns.length, startedAt);
+      }
+
+      const finalMeta = (finalResult && finalResult.metadata) || {};
+      return {
+        output: turnOutputs.join('\n---\n'),
+        metadata: baseMetadata(cfg, {
+          cost_usd: finalMeta.cost_usd != null ? finalMeta.cost_usd : null,
+          tokens: finalMeta.tokens || {},
+          transcript_summary: finalMeta.transcript_summary || '',
+          turns_completed: turns.length,
+          final_turn_output: (lastTurn && lastTurn.output) || '',
+          transcript,
+          latency_ms_per_turn: latencyPerTurn,
+          latency_ms_total: Date.now() - startedAt,
+        }),
+      };
+    } catch (e) {
+      const err = normalizeErr(e);
+      return errorReturn(cfg, err, transcript, turnOutputs, latencyPerTurn, turnOutputs.length, startedAt);
+    } finally {
+      if (session != null && provider && typeof provider.shutdown === 'function') {
+        try {
+          await provider.shutdown(session);
+        } catch (_) {
+          /* best-effort */
+        }
+      }
+      _cleanWorkspace(runId, caseId);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -710,5 +885,8 @@ makeBridge._cleanWorkspace = _cleanWorkspace;
 // Spawn injection for tests (avoids native module cache issues in Node 24)
 makeBridge._setSpawnImpl = (fn) => { _spawnImpl = fn; };
 makeBridge._clearSpawnImpl = () => { _spawnImpl = null; };
+// In-proc cache controls (Phase 9.5) — tests only.
+makeBridge._clearInprocCache = _clearInprocCache;
+makeBridge._lastInprocSession = () => _lastInprocSessionRef;
 
 module.exports = makeBridge;
