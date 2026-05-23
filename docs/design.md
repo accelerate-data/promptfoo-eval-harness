@@ -186,6 +186,67 @@ Test exports `makeBridge._clearInprocCache()` and `makeBridge._lastInprocSession
 
 These three changes ship together in v1.0.1.
 
+## Claude Agent SDK provider (added in Phase 10, v1.1.0)
+
+VD-2174-9 lands the first of the three Node-SDK-flavoured providers that piggyback on the Phase 9.5 generic bridge dispatch. The Claude Agent SDK is Python-only, so it runs in the subprocess branch via `_python_adapter.py`, not the in-proc branch.
+
+### Provider matrix
+
+| `provider_kind` | Status | Mode | Model aliases | Default-on tools | Permission gates |
+| --- | --- | --- | --- | --- | --- |
+| `opencode_cli` | stable | inproc (specialised) | `opencode-mock`, `opencode-anthropic` | n/a (CLI-managed) | n/a |
+| `openhands_sdk` | stable | subprocess (`uv run --with openhands-sdk==1.22.1`) | `mock/openhands-mock`, `openhands/anthropic-claude-3-5-sonnet` | per agent profile | per OpenHands `MCPConfig` |
+| `claude_agent_sdk` | stable | subprocess (`uv run --with claude-agent-sdk==0.2.85`) | `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-haiku-4-5` (aliases: `opus`, `sonnet`, `haiku`) | `Read`, `Write`, `Edit`, `Glob`, `Grep` | `Bash` requires `permissions.allow_shell=true`; `WebSearch`, `WebFetch`, `AskUserQuestion` require `permissions.allow_web=true` |
+| `opencode_sdk` | planned (Phase 11 / v1.2.0) | inproc | — | — | — |
+| `codex_sdk` | planned (Phase 12 / v1.3.0) | inproc | — | — | — |
+
+### Subprocess shape
+
+The bridge dispatches `provider_kind=claude_agent_sdk` via `_buildSpawnSpec` which emits:
+
+```
+uv run --python 3.12 --with claude-agent-sdk==<version> \
+  python -m scripts.framework.providers._python_adapter --kind=claude_agent_sdk
+```
+
+`<version>` is read at spawn time from `scripts/framework/providers/sdk-pins.json` so consumer repos can bump the wheel without touching framework code. The adapter loads `scripts/framework/providers/claude_agent_sdk/provider.py:create()` and threads the standard `init`/`turn`/`finalize`/`shutdown` lifecycle over the existing NDJSON IPC contract.
+
+### Single-turn vs multi-turn dispatch
+
+The bridge threads the case-level `vars.turns.length` into `cfg.extra.total_turns` (spec §7.2). The provider branches on this at `init()` time:
+
+- `total_turns == 1` → emits `claude_agent_sdk.query(prompt, options)` directly per turn. No `ClaudeSDKClient` is allocated.
+- `total_turns > 1` → allocates a single `ClaudeSDKClient(options)` for the whole session and reuses it across every `turn()` call so conversation history (Anthropic-side prompt cache + SDK-side message log) survives turn boundaries.
+
+The `provider.test.py::TestMultiTurn::test_multi_turn_dependency` test locks the client-identity invariant: turn 2 must observe `id(session.client) == id(client_after_t1)`.
+
+### Tool catalogue + permission gates
+
+`scripts/framework/providers/claude_agent_sdk/tools.py` owns the tool derivation:
+
+- Built-in catalogue: `Read`, `Write`, `Edit`, `Glob`, `Grep`, `Bash`, `WebSearch`, `WebFetch`, `AskUserQuestion`. Any other name in `cfg.tools[]` raises `UNSUPPORTED_TOOL`.
+- Default-on (admitted even when `cfg.tools=[]`): `Read`, `Write`, `Edit`, `Glob`, `Grep`.
+- Shell-gated: `Bash` admitted only if `cfg.permissions.allow_shell=true`; otherwise raises `PERMISSION_DENIED`.
+- Web-gated: `WebSearch`, `WebFetch`, `AskUserQuestion` admitted only if `cfg.permissions.allow_web=true`.
+
+The `_MODEL_ALIASES` map in `tools.py` resolves `opus`/`sonnet`/`haiku` short-forms to their pinned `claude-*-4-X` IDs; anything else raises `UNSUPPORTED_MODEL`.
+
+### Error taxonomy
+
+The provider maps SDK exceptions onto the contract codes:
+
+| SDK signal | Contract code | Retryable |
+| --- | --- | --- |
+| `ProcessError` (exit 2 / auth) | `auth` | no |
+| `CLIConnectionError` | `sdk_error` | yes |
+| `asyncio.TimeoutError` (per-turn) | `LLM_TIMEOUT` | yes |
+| `ToolResultMessage(is_error=True)` mid-turn | `tool_error` | no |
+| `ProviderRuntimeError` from `tools.py` validation | `UNSUPPORTED_MODEL` / `UNSUPPORTED_TOOL` / `PERMISSION_DENIED` | no |
+
+### Mock-mode scenario
+
+Layer 4 nightly coverage lives at `tests/harness-scenarios/packages/claude-mock-multi-turn/`. `tests/_mock_claude_agent_sdk/sitecustomize.py` monkey-patches `sys.modules["claude_agent_sdk"]` with the deterministic mock from `sdk.py` so the scenario validates the full bridge → adapter → provider → mock-SDK round-trip without a live `ANTHROPIC_API_KEY`. `.github/workflows/nightly-scenarios.yml` pre-warms the real wheel into uv's cache so the mock-mode run does not pay first-fetch latency.
+
 ## Open Questions
 
 1. `[extraction]` What package name and versioning policy should the standalone harness use?
