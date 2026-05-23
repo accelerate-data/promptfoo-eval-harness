@@ -9,3 +9,8 @@ results/
 *.log
 npm-debug.log*
 .promptfoo/
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/

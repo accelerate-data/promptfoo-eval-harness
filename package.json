@@ -26,7 +26,7 @@
   ],
   "scripts": {
     "test": "node --test scripts/*.test.js scripts/framework/*.test.js",
-    "lint:md": "markdownlint '**/*.md' --ignore node_modules"
+    "lint:md": "markdownlint '**/*.md' --ignore-path .markdownlintignore"
   },
   "dependencies": {
     "js-yaml": "^4.1.1",
