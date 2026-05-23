@@ -2,7 +2,7 @@
   "description": "opencode-cli-compatibility — locks the legacy OpenCode CLI provider behavior (spec §7.4, C.15).",
   "providers": [
     {
-      "id": "file://provider-shim.js",
+      "id": "file://../../../../scripts/framework/_node_bridge.js",
       "label": "opencode-cli/claude-sonnet-4-6",
       "config": {
         "provider_kind": "opencode_cli",
