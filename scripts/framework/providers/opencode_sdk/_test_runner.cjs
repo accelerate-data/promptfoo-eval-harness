@@ -11,24 +11,16 @@
  * drives a real HarnessBridgeProvider against the opencode_sdk kind, and
  * writes the result JSON to stdout as a single line.
  *
- * The bridge's `_dispatchInproc` requires `KIND_REGISTRY.opencode_sdk` to be
- * populated; the runner registers it defensively so the test file can be
- * exercised before Step 2 lands the permanent entry in `_node_bridge.js`.
+ * KIND_REGISTRY.opencode_sdk is wired in `_node_bridge.js` (Step 2); the
+ * loader hook in `tests/_mock_opencode_sdk/register.mjs` makes the provider's
+ * `await import('@opencode-ai/sdk')` resolve to the mock module so the bridge
+ * round-trip runs without the real SDK.
  */
 
-const path = require('node:path');
 const fs = require('node:fs');
 
 const makeBridge = require('../../_node_bridge');
 const HarnessBridgeProvider = makeBridge._HarnessBridgeProvider;
-const KIND_REGISTRY = makeBridge._KIND_REGISTRY;
-
-if (!KIND_REGISTRY.opencode_sdk) {
-  KIND_REGISTRY.opencode_sdk = {
-    mode: 'inproc',
-    module: path.resolve(__dirname, 'provider.js'),
-  };
-}
 
 async function main() {
   const raw = fs.readFileSync(0, 'utf8');

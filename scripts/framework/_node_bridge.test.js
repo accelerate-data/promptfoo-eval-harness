@@ -112,14 +112,15 @@ describe('_node_bridge', () => {
   });
 
   describe('KIND_REGISTRY', () => {
-    test('has three entries: opencode_cli, openhands_sdk, claude_agent_sdk', () => {
+    test('has four entries: opencode_cli, openhands_sdk, claude_agent_sdk, opencode_sdk', () => {
       const makeBridge = loadBridge();
       const reg = makeBridge._KIND_REGISTRY;
       const keys = Object.keys(reg).sort();
-      // Phase 10 (VD-2174-9) added claude_agent_sdk. Phase 11/12 (OpenCode SDK,
-      // Codex SDK) must extend this list — the explicit assertion ensures any
-      // new provider lands deliberately.
-      assert.deepStrictEqual(keys, ['claude_agent_sdk', 'opencode_cli', 'openhands_sdk']);
+      // Phase 10 (VD-2174-9) added claude_agent_sdk; Phase 11 (VD-2174-10)
+      // added opencode_sdk (in-proc Node). Phase 12 (Codex SDK) must extend
+      // this list again — the explicit assertion ensures any new provider
+      // lands deliberately.
+      assert.deepStrictEqual(keys, ['claude_agent_sdk', 'opencode_cli', 'opencode_sdk', 'openhands_sdk']);
     });
 
     test('opencode_cli has mode=inproc', () => {
@@ -154,6 +155,20 @@ describe('_node_bridge', () => {
       assert.ok(
         spawn.includes('--kind=claude_agent_sdk'),
         `expected --kind=claude_agent_sdk in spawn argv, got: ${JSON.stringify(spawn)}`,
+      );
+    });
+
+    test('opencode_sdk has mode=inproc', () => {
+      const makeBridge = loadBridge();
+      assert.strictEqual(makeBridge._KIND_REGISTRY.opencode_sdk.mode, 'inproc');
+    });
+
+    test('opencode_sdk module path points to providers/opencode_sdk/provider.js', () => {
+      const makeBridge = loadBridge();
+      const modulePath = makeBridge._KIND_REGISTRY.opencode_sdk.module;
+      assert.ok(
+        modulePath.endsWith(require('node:path').join('providers', 'opencode_sdk', 'provider.js')),
+        `expected module path to end with providers/opencode_sdk/provider.js, got: ${modulePath}`,
       );
     });
   });

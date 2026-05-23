@@ -89,8 +89,9 @@ function _clearInprocCache() {
 
 // ---------------------------------------------------------------------------
 // KIND_REGISTRY — maps provider_kind → dispatch strategy.
-// Exactly two entries in v1.0.0. The test asserts this count so adding
-// Claude Agent SDK in Phase 2 forces a deliberate edit.
+// v1.0.0 shipped 2 entries; Phase 10 (v1.1.0) added claude_agent_sdk;
+// Phase 11 (v1.2.0) adds opencode_sdk (in-proc Node). The test asserts the
+// exact key set so a new provider lands deliberately.
 // ---------------------------------------------------------------------------
 const _ADAPTER_PATH = path.resolve(__dirname, 'providers', '_python_adapter.py');
 
@@ -131,6 +132,16 @@ const KIND_REGISTRY = {
         '--kind=claude_agent_sdk',
       ];
     },
+  },
+  // Phase 11 (VD-2174-10) — OpenCode SDK. In-proc Node provider that boots
+  // an ephemeral 127.0.0.1:0 OpenCode server via @opencode-ai/sdk and
+  // dispatches turns through a per-case session. The bridge's generic
+  // _dispatchInproc (Phase 9.5) loads providers/opencode_sdk/provider.js,
+  // calls its create() factory, and drives the init/turn/finalize/shutdown
+  // lifecycle. The @opencode-ai/sdk dependency is pinned in Phase 11 Step 3.
+  opencode_sdk: {
+    mode: 'inproc',
+    module: path.resolve(__dirname, 'providers', 'opencode_sdk', 'provider.js'),
   },
 };
 
