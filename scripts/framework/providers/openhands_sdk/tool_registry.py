@@ -13,7 +13,6 @@ Actual OpenHands SDK pattern:
 
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING, Any
 
 from _errors import ProviderRuntimeError

@@ -31,12 +31,12 @@ for _p in (_THIS_DIR, _PROVIDERS_DIR, _REPO_ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import pytest
-
+import pytest  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers to build the mock SDK sys.modules entries
 # ---------------------------------------------------------------------------
+
 
 def _install_mock_sdk():
     """Inject mock SDK into sys.modules before provider imports it."""
@@ -63,6 +63,7 @@ def _uninstall_mock_sdk():
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def mock_sdk_fixture():
     """Install mock SDK before each test; remove after."""
@@ -78,12 +79,14 @@ def mock_sdk_fixture():
 @pytest.fixture()
 def provider():
     from provider import create
+
     return create()
 
 
 @pytest.fixture()
 def cfg():
     from _contract import ProviderConfig
+
     return ProviderConfig(
         provider_kind="openhands_sdk",
         model="claude-sonnet-4-6",
@@ -99,9 +102,11 @@ def cfg():
 # Helper
 # ---------------------------------------------------------------------------
 
+
 def _assert_turn_result_shape(result) -> None:
     """Assert TurnResult satisfies spec §1.2 shape."""
-    from _contract import TurnResult, ToolCallRecord
+    from _contract import ToolCallRecord, TurnResult
+
     assert isinstance(result, TurnResult)
     assert isinstance(result.text, str)
     assert isinstance(result.tool_calls, list)
@@ -116,6 +121,7 @@ def _assert_turn_result_shape(result) -> None:
 # Lifecycle tests
 # ---------------------------------------------------------------------------
 
+
 class TestLifecycle:
     def test_init_returns_session(self, provider, cfg) -> None:
         session = provider.init(cfg)
@@ -123,7 +129,6 @@ class TestLifecycle:
         assert not session.closed
 
     def test_three_turns_each_return_turn_result(self, provider, cfg) -> None:
-        from _contract import TurnResult
         session = provider.init(cfg)
         for i, msg in enumerate(["hello", "hello", "hello"]):
             result = provider.turn(session, msg)
@@ -137,6 +142,7 @@ class TestLifecycle:
 
     def test_finalize_returns_final_result(self, provider, cfg) -> None:
         from _contract import FinalResult
+
         session = provider.init(cfg)
         provider.turn(session, "hello")
         provider.turn(session, "hello")
@@ -176,6 +182,7 @@ class TestLifecycle:
 # Failure-mode tests
 # ---------------------------------------------------------------------------
 
+
 class TestToolCallError:
     """Tool-call error mid-turn: TurnResult.tool_calls[0].error is populated."""
 
@@ -201,7 +208,6 @@ class TestLLMTimeout:
     """LLM timeout: TurnResult.error.code == 'LLM_TIMEOUT'."""
 
     def test_timeout_sets_turn_error(self, provider, cfg, mock_sdk_fixture) -> None:
-        from _contract import ProviderError
         session = provider.init(cfg)
         result = provider.turn(session, "__timeout__: simulate slow LLM")
         assert result.error is not None

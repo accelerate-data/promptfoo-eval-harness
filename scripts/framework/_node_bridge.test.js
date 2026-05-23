@@ -399,8 +399,10 @@ describe('_node_bridge', () => {
           const result = await provider.callApi('hello', { vars: {} });
 
           assert.ok(spawnCmd !== null, 'spawn must be called');
-          const adapterArg = spawnArgs.find((a) => a && a.includes('_python_adapter.py'));
-          assert.ok(adapterArg, `spawn args must include _python_adapter.py, got: ${JSON.stringify(spawnArgs)}`);
+          // Accept both the legacy file-path form (_python_adapter.py) and the
+          // module-invocation form (-m scripts.framework.providers._python_adapter).
+          const adapterArg = spawnArgs.find((a) => a && a.includes('_python_adapter'));
+          assert.ok(adapterArg, `spawn args must reference _python_adapter, got: ${JSON.stringify(spawnArgs)}`);
           assert.ok(result.output !== undefined, 'should have output');
           assert.ok(result.metadata, 'metadata must be present');
         },

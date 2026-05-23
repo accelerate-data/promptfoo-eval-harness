@@ -12,7 +12,6 @@ Spike A.0 discrepancy row #1: Session is LocalConversation, not an opaque Protoc
 from __future__ import annotations
 
 import logging
-import sys
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -23,11 +22,13 @@ _log = logging.getLogger(__name__)
 # Session container — wraps LocalConversation + per-session metadata
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class _Session:
     """Internal session state.  Not part of the public contract type."""
-    conversation: Any                    # LocalConversation
-    extractor: Any                       # EventExtractor
+
+    conversation: Any  # LocalConversation
+    extractor: Any  # EventExtractor
     turns_completed: int = 0
     all_tool_calls: list = field(default_factory=list)
     closed: bool = False
@@ -36,6 +37,7 @@ class _Session:
 # ---------------------------------------------------------------------------
 # Provider implementation
 # ---------------------------------------------------------------------------
+
 
 class OpenHandsSDKProvider:
     """Implements the SDKProvider Protocol for openhands-sdk."""
@@ -50,9 +52,9 @@ class OpenHandsSDKProvider:
 
         # Lazy imports of sibling modules
         try:
-            import tool_registry as tr  # noqa: PLC0415
-            import model_resolver as mr  # noqa: PLC0415
             import agent_factory as af  # noqa: PLC0415
+            import model_resolver as mr  # noqa: PLC0415
+            import tool_registry as tr  # noqa: PLC0415
             from event_extractor import EventExtractor  # noqa: PLC0415
         except ImportError as exc:
             raise ProviderRuntimeError(
@@ -188,6 +190,7 @@ class OpenHandsSDKProvider:
 # ---------------------------------------------------------------------------
 # Public factory — imported by _python_adapter via _PROVIDER_REGISTRY
 # ---------------------------------------------------------------------------
+
 
 def create() -> OpenHandsSDKProvider:
     """Return an SDKProvider instance for openhands_sdk."""

@@ -36,6 +36,8 @@ function _getSpawn() {
 // Exactly two entries in v1.0.0. The test asserts this count so adding
 // Claude Agent SDK in Phase 2 forces a deliberate edit.
 // ---------------------------------------------------------------------------
+const _ADAPTER_PATH = path.resolve(__dirname, 'providers', '_python_adapter.py');
+
 const KIND_REGISTRY = {
   opencode_cli: {
     mode: 'inproc',
@@ -43,7 +45,19 @@ const KIND_REGISTRY = {
   },
   openhands_sdk: {
     mode: 'subprocess',
-    adapter: path.resolve(__dirname, 'providers', '_python_adapter.py'),
+    // adapter: kept for backward-compat with existing tests that verify the path.
+    adapter: _ADAPTER_PATH,
+    // spawn: full uv argv — version sourced dynamically from sdk-pins.toml (loadSdkPins).
+    // Computed as a getter so test overrides to sdk-pins path propagate correctly.
+    get spawn() {
+      const version = loadSdkPins().openhands_sdk.version;
+      return [
+        'uv', 'run', '--python', '3.12',
+        '--with', `openhands-sdk==${version}`,
+        'python', '-m', 'scripts.framework.providers._python_adapter',
+        '--kind=openhands_sdk',
+      ];
+    },
   },
 };
 
@@ -174,10 +188,11 @@ function _buildSpawnSpec(kind, adapterPath) {
   const pins = loadSdkPins();
   const kindPins = pins[kind];
 
-  // Build a minimal env: only PATH, HOME, TMPDIR + kind's env_allowlist keys
+  // Build a minimal env: only PATH, HOME, TMPDIR + kind's env_allowlist keys.
+  // PYTHONPATH is always forwarded when set so test-time mock SDK monkey-patching works.
   const allowlist = (kindPins && Array.isArray(kindPins.env_allowlist) ? kindPins.env_allowlist : []);
   const minEnv = {};
-  for (const key of ['PATH', 'HOME', 'TMPDIR', ...allowlist]) {
+  for (const key of ['PATH', 'HOME', 'TMPDIR', 'PYTHONPATH', ...allowlist]) {
     if (process.env[key] !== undefined) {
       minEnv[key] = process.env[key];
     }
@@ -185,8 +200,15 @@ function _buildSpawnSpec(kind, adapterPath) {
   // Always suppress banners
   minEnv.OPENHANDS_SUPPRESS_BANNER = '1';
 
+  // Use the registry spawn array when available (module-invocation form).
+  // Fall back to legacy path-based invocation for future kinds without a spawn spec.
+  const registry = KIND_REGISTRY[kind];
   let cmd, args;
-  if (kind === 'openhands_sdk') {
+  if (registry && registry.spawn) {
+    const spawnArgv = registry.spawn; // getter — re-reads sdk-pins each call
+    cmd = spawnArgv[0];
+    args = spawnArgv.slice(1);
+  } else if (kind === 'openhands_sdk') {
     const version = kindPins.version;
     cmd = 'uv';
     args = ['run', '--python', '3.12', '--with', `openhands-sdk==${version}`, 'python', adapterPath, `--kind=${kind}`];

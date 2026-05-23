@@ -24,13 +24,13 @@ for _p in (_THIS_DIR, _PROVIDERS_DIR, _REPO_ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import pytest
-
+import pytest  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Inline minimal mock SDK (avoids dependency on tests/_mock_openhands_sdk
 # which is authored in D.20 — factory test must be self-contained per D.19)
 # ---------------------------------------------------------------------------
+
 
 class _MockLLM:
     def __init__(self, model, api_key=None, temperature=0.0, max_tokens=4096):
@@ -49,6 +49,7 @@ class _MockAgent:
 
 class _MockConversation:
     """Mock Conversation factory — returns itself as the LocalConversation."""
+
     def __init__(self, agent, workspace=None, delete_on_close=False, **kwargs):
         self.agent = agent
         self.workspace = workspace
@@ -83,6 +84,7 @@ def _make_mock_sdk_module():
 # Mock tool_registry and model_resolver modules
 # ---------------------------------------------------------------------------
 
+
 class _MockToolRegistry:
     @staticmethod
     def get_allowed_tools(names=None):
@@ -100,6 +102,7 @@ class _MockModelResolver:
 # Fixture: patch openhands.sdk before import
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def patch_sdk(monkeypatch):
     mock_mod = _make_mock_sdk_module()
@@ -113,9 +116,11 @@ def patch_sdk(monkeypatch):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestBuildAgent:
     def _make_cfg(self, **kwargs):
         from _contract import ProviderConfig
+
         defaults = dict(
             provider_kind="openhands_sdk",
             model="claude-sonnet-4-6",
@@ -130,6 +135,7 @@ class TestBuildAgent:
 
     def test_returns_two_tuple(self) -> None:
         from agent_factory import build_agent
+
         cfg = self._make_cfg()
         result = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
         assert isinstance(result, tuple)
@@ -137,30 +143,35 @@ class TestBuildAgent:
 
     def test_first_element_is_agent(self) -> None:
         from agent_factory import build_agent
+
         cfg = self._make_cfg()
         agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
         assert isinstance(agent, _MockAgent)
 
     def test_second_element_is_conversation(self) -> None:
         from agent_factory import build_agent
+
         cfg = self._make_cfg()
         _, conv = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
         assert isinstance(conv, _MockConversation)
 
     def test_conversation_has_workspace(self) -> None:
         from agent_factory import build_agent
+
         cfg = self._make_cfg(workspace_root="/tmp/myws")
         _, conv = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
         assert conv.workspace == "/tmp/myws"
 
     def test_conversation_delete_on_close_false(self) -> None:
         from agent_factory import build_agent
+
         cfg = self._make_cfg()
         _, conv = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
         assert conv.delete_on_close is False
 
     def test_agent_carries_tools(self) -> None:
         from agent_factory import build_agent
+
         cfg = self._make_cfg(tools=["BashTool"])
         agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
         assert len(agent.tools) == 1
@@ -168,6 +179,7 @@ class TestBuildAgent:
 
     def test_system_prompt_passed_through(self) -> None:
         from agent_factory import build_agent
+
         cfg = self._make_cfg()
         cfg.extra["system_prompt"] = "You are a helpful assistant."
         agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
@@ -175,6 +187,7 @@ class TestBuildAgent:
 
     def test_llm_model_resolved(self) -> None:
         from agent_factory import build_agent
+
         cfg = self._make_cfg(model="claude-sonnet-4-6")
         agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
         assert agent.llm.model == "anthropic/claude-sonnet-4-6"

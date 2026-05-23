@@ -19,7 +19,6 @@ Conversation() construction time.
 from __future__ import annotations
 
 import logging
-import sys
 import time
 from typing import Any
 
@@ -88,20 +87,18 @@ class EventExtractor:
         """
         # Late import so the module loads standalone in unit tests that
         # monkey-patch sys.modules before importing openhands_sdk.
-        import sys as _sys
 
         # Find _contract — it may be on sys.path as '_contract' (adapter path)
         # or as 'scripts.framework.providers._contract' (repo-root import).
         try:
-            from _contract import ProviderError, ToolCallRecord, TurnResult  # noqa: PLC0415
+            from _contract import ToolCallRecord, TurnResult  # noqa: PLC0415
         except ImportError:
             from scripts.framework.providers._contract import (  # noqa: PLC0415
-                ProviderError,
                 ToolCallRecord,
                 TurnResult,
             )
 
-        latency_ms = int((time.monotonic() - self._t0) * 1000)
+        _latency_ms = int((time.monotonic() - self._t0) * 1000)
 
         tool_call_records = []
         for tc in self._tool_calls:

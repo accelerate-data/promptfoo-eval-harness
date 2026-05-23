@@ -21,9 +21,8 @@ for _p in (_THIS_DIR, _PROVIDERS_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import pytest
-
-from model_resolver import _MODEL_MAP, resolve_model
+import pytest  # noqa: E402
+from model_resolver import _MODEL_MAP, resolve_model  # noqa: E402
 
 
 class TestResolveModelAliases:
@@ -53,8 +52,7 @@ class TestResolveModelAliases:
             "gpt-4o",
         }
         assert set(_MODEL_MAP.keys()) == tested, (
-            "New alias added to _MODEL_MAP but not to the test parametrize list. "
-            "Add a row above."
+            "New alias added to _MODEL_MAP but not to the test parametrize list. Add a row above."
         )
 
 

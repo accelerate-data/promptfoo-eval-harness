@@ -66,7 +66,7 @@ def build_agent(
 
     # --- SDK imports (lazy) ----------------------------------------------
     try:
-        from openhands.sdk import Agent, Conversation, LLM  # noqa: PLC0415
+        from openhands.sdk import LLM, Agent, Conversation  # noqa: PLC0415
     except ImportError as exc:
         raise ProviderRuntimeError(
             code="sdk_error",

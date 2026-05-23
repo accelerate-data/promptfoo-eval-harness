@@ -21,10 +21,10 @@ from __future__ import annotations
 
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Event stubs — class names must match what EventExtractor.on_event() routes on.
 # ---------------------------------------------------------------------------
+
 
 class SystemPromptEvent:
     def __init__(self, content: str = "") -> None:
@@ -67,6 +67,7 @@ class ObservationEvent:
 # Tool stub
 # ---------------------------------------------------------------------------
 
+
 class Tool:
     def __init__(self, name: str, params: dict | None = None) -> None:
         self.name = name
@@ -92,6 +93,7 @@ class FileEditTool(Tool):
 # LLM stub
 # ---------------------------------------------------------------------------
 
+
 class LLM:
     """Records construction args; makes no network calls."""
 
@@ -113,6 +115,7 @@ class LLM:
 # Agent stub
 # ---------------------------------------------------------------------------
 
+
 class Agent:
     def __init__(
         self,
@@ -129,6 +132,7 @@ class Agent:
 # ---------------------------------------------------------------------------
 # Conversation / LocalConversation stub
 # ---------------------------------------------------------------------------
+
 
 class Conversation:
     """Factory function stand-in — returns a MockConversation (LocalConversation)."""
@@ -218,17 +222,21 @@ class MockConversation:
 
         if message == "use bash":
             call_id = "mock-action-1"
-            events.append(ActionEvent(
-                call_id=call_id,
-                tool_name="BashTool",
-                tool_params={"cmd": "echo hello"},
-            ))
+            events.append(
+                ActionEvent(
+                    call_id=call_id,
+                    tool_name="BashTool",
+                    tool_params={"cmd": "echo hello"},
+                )
+            )
             tool_error = self._force_tool_error
-            events.append(ObservationEvent(
-                cause=call_id,
-                content="" if tool_error else "hello\n",
-                error=tool_error,
-            ))
+            events.append(
+                ObservationEvent(
+                    cause=call_id,
+                    content="" if tool_error else "hello\n",
+                    error=tool_error,
+                )
+            )
             events.append(MessageEvent(source="agent", content="Done."))
         else:
             reply = f"Echo: {message}" if message != "hello" else "Hi there!"

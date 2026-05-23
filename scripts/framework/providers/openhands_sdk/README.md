@@ -6,7 +6,7 @@ Implements the `SDKProvider` Protocol from `_contract.py` for subprocess dispatc
 ## Module layout
 
 | File | Purpose |
-|---|---|
+| --- | --- |
 | `__init__.py` | Package marker |
 | `provider.py` | `SDKProvider` implementation — `create()` factory, `init/turn/finalize/shutdown` |
 | `tool_registry.py` | Whitelist of allowed SDK tool names; `get_allowed_tools()` |
@@ -37,7 +37,7 @@ ruff format --check scripts/framework/providers/openhands_sdk/
 
 The Node bridge subprocess-spawns the Python adapter when `provider_kind: openhands_sdk`:
 
-```
+```text
 Node bridge → KIND_REGISTRY.openhands_sdk → uv run --with openhands-sdk==1.22.1 \
               python -m scripts.framework.providers._python_adapter --kind=openhands_sdk
               → _PROVIDER_REGISTRY["openhands_sdk"] → provider.create() → OpenHandsSDKProvider

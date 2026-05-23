@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 
 # ---------------------------------------------------------------------------
 # Path setup — make _contract and openhands_sdk package importable
@@ -23,15 +22,14 @@ for _p in (_THIS_DIR, _PROVIDERS_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import pytest
 
-from event_extractor import EventExtractor, _truncate
-from _contract import TurnResult, ToolCallRecord
-
+from _contract import TurnResult  # noqa: E402
+from event_extractor import EventExtractor, _truncate  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Minimal stub event classes (no SDK needed)
 # ---------------------------------------------------------------------------
+
 
 class TextContent:
     def __init__(self, text: str) -> None:
@@ -103,6 +101,7 @@ ORPHAN_OBSERVATION_FIXTURE = [
 # Helper: run fixture through extractor
 # ---------------------------------------------------------------------------
 
+
 def _run_fixture(events) -> TurnResult:
     ex = EventExtractor()
     ex.start_turn()
@@ -114,6 +113,7 @@ def _run_fixture(events) -> TurnResult:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestSimpleTextTurn:
     def test_text_assembled_from_agent_messages(self) -> None:
