@@ -1,0 +1,34 @@
+{
+  "description": "minimal-smoke — 1-turn opencode_cli smoke test using mock binary (no live key needed).",
+  "providers": [
+    {
+      "id": "file://../../../../scripts/framework/_node_bridge.js",
+      "label": "opencode-cli/opencode-mock",
+      "config": {
+        "provider_kind": "opencode_cli",
+        "provider_label": "opencode-cli/opencode-mock",
+        "model": "opencode-mock",
+        "agent": "eval_light",
+        "opencode_config": "opencode.json",
+        "project_dir": ".",
+        "format": "json",
+        "log_level": "WARN",
+        "print_logs": false
+      }
+    }
+  ],
+  "tests": [
+    {
+      "description": "[smoke] single-turn pong",
+      "vars": {
+        "turns": "Say 'pong'."
+      },
+      "assert": [
+        {
+          "type": "javascript",
+          "value": "output && output.length > 0"
+        }
+      ]
+    }
+  ]
+}

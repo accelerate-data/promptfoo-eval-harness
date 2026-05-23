@@ -1,0 +1,35 @@
+{
+  "description": "openhands-mock-multi-turn — 3-turn openhands_sdk scenario using mock SDK (no live key needed).",
+  "providers": [
+    {
+      "id": "file://../../../../scripts/framework/_node_bridge.js",
+      "label": "openhands-sdk/openhands-mock",
+      "config": {
+        "provider_kind": "openhands_sdk",
+        "provider_label": "openhands-sdk/openhands-mock",
+        "model": "mock/openhands-mock",
+        "agent": "eval_light",
+        "log_level": "WARN",
+        "print_logs": false
+      }
+    }
+  ],
+  "tests": [
+    {
+      "description": "[multi-turn] arithmetic chain",
+      "vars": {
+        "turns": "[\"What is 2+2?\", \"Add 5 to it.\", \"Square the result.\"]"
+      },
+      "assert": [
+        {
+          "type": "javascript",
+          "value": "output && output.length > 0"
+        },
+        {
+          "type": "javascript",
+          "value": "(() => { const parts = output.split('\\n---\\n'); return parts.length === 3; })()"
+        }
+      ]
+    }
+  ]
+}

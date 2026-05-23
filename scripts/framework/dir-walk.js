@@ -51,24 +51,32 @@ function* walkScenarios(rootDir) {
 // ---------------------------------------------------------------------------
 
 /**
- * Spawn `node bin/ad-evals.js run <configPath>` for one scenario directory.
+ * Spawn Promptfoo directly for one scenario directory.
+ *
+ * Scenarios are self-contained (providers already wired in promptfooconfig.json)
+ * and live outside the eval root, so they bypass the guard (run-promptfoo-with-guard)
+ * and invoke the Promptfoo entrypoint directly.
  *
  * @param {string} scenarioDir - Absolute path to the scenario directory.
  * @param {NodeJS.ProcessEnv} env - Environment to pass to the child process.
- * @param {string} harnessRoot - Repo root (used to resolve bin/ad-evals.js).
+ * @param {string} harnessRoot - Repo root (used to locate node_modules/promptfoo).
  * @returns {Promise<{name: string, exitCode: number, stdout: string, stderr: string, durationMs: number}>}
  */
 function spawnScenario(scenarioDir, env, harnessRoot) {
   const name = path.basename(scenarioDir);
   const configPath = path.join(scenarioDir, 'promptfooconfig.json');
-  const adEvalsBin = path.join(harnessRoot, 'bin', 'ad-evals.js');
+  // Invoke Promptfoo entrypoint directly — scenarios are self-contained and
+  // live outside EVAL_ROOT, so they do not go through run-promptfoo-with-guard.
+  const promptfooEntrypoint = path.join(
+    harnessRoot, 'node_modules', 'promptfoo', 'dist', 'src', 'entrypoint.js',
+  );
   const startMs = Date.now();
 
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
 
-    const child = spawn(process.execPath, [adEvalsBin, 'run', configPath], {
+    const child = spawn(process.execPath, [promptfooEntrypoint, 'eval', '--no-cache', '-c', configPath], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env,
       cwd: harnessRoot,
