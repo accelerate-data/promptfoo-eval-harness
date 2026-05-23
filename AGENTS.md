@@ -45,7 +45,7 @@ Prereqs: Node ≥ 20 (SDK providers require it), `opencode --version` resolves i
 | `opencode_cli` | inproc Node (spawns `opencode` CLI) | OpenCode CLI is on `PATH` and you want zero per-call Node/Python overhead |
 | `opencode_sdk` | inproc Node (`@opencode-ai/sdk@1.15.10`) | OpenCode agents via typed SDK; harness auto-boots a fresh `127.0.0.1:0` server per case (dynamic port) and shuts it down in `finalize` |
 | `codex_sdk` | inproc Node (`@openai/codex-sdk@0.133.0`) | Codex/GPT-family with explicit `sandbox_mode` / `model_reasoning_effort` controls |
-| `openhands_sdk` | subprocess (`uv run --with openhands-sdk@<pin>`) | OpenHands agent loop; budget for Python cold-spawn cost |
+| `openhands_sdk` | subprocess (`uv run --with openhands-sdk@<pin>`) | OpenHands agent loop; supports gateway mode (`model` + `base_url` + `OPENHANDS_API_KEY`) for any OpenAI-compatible endpoint |
 | `claude_agent_sdk` | subprocess (`uv run --with claude-agent-sdk@<pin>`) | Claude as the eval target; multi-turn + file-edit tools; permission gates on `Bash` / `WebSearch` / `WebFetch` |
 
 Selection guidance:
@@ -55,6 +55,23 @@ Selection guidance:
 - **Lowest latency** → `opencode_cli` (no SDK import, no server boot).
 - **No external binary on PATH** → SDK providers (server/runtime spawned in-proc per case).
 - **Parallel runs** → multi-model AND multi-scenario parallelism use the `concurrency.js` hierarchical semaphore; SDK providers run on isolated dynamic ports so the bottleneck is upstream model rate limits, not local resources.
+
+### OpenHands gateway mode (v1.4.0)
+
+Point `openhands_sdk` at any OpenAI-compatible endpoint (Accelerate gateway, LiteLLM proxy, vLLM, …) with two inputs: a model name and a `base_url`. Auth collapses to a single env var `OPENHANDS_API_KEY` — the LiteLLM prefix-routing alias table is bypassed and the model name passes through verbatim.
+
+Tier config (`config/eval-tiers.toml`, v1 schema):
+
+```toml
+[[tiers.standard.providers]]
+provider_kind = "openhands_sdk"
+model = "gpt-4o"
+
+[tiers.standard.providers.extra]
+base_url = "https://gateway.internal/v1"
+```
+
+Then `export OPENHANDS_API_KEY=sk-...` in the consumer repo's `.env`. Omit `base_url` to fall back to the legacy `_MODEL_MAP` resolver + `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` prefix routing. Full reference: `docs/setup.md` → "OpenHands SDK — gateway mode".
 
 ## Running evals (consumer repo)
 
