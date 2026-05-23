@@ -30,11 +30,78 @@
  * `session.prompt` requires `body.model` to be an object
  * `{providerID, modelID}` — harness config carries it as a "p/m" string and
  * the provider splits on the first `/` before sending. (v1.3.2 hotfix.)
+ *
+ * Guaranteed cleanup (v1.3.3): every successful `init()` registers the
+ * spawned `opencode serve` child in a module-scoped `_activeServers`
+ * registry. `_stopServer()` removes the entry after `server.close()` runs.
+ * A one-shot signal hook installed on first `init()` drains the registry
+ * on `exit` / `SIGINT` / `SIGTERM` / `uncaughtException`, so the child is
+ * never orphaned even if the harness process is killed mid-run or the
+ * per-case `finally` block does not get a chance to call `shutdown()`.
  */
 
 const STARTUP_TIMEOUT_MS = 5000;
 const SHUTDOWN_TIMEOUT_MS = 5000;
 const SUPPORTED_AGENTS = new Set(['build', 'plan', 'general']);
+
+// ---------------------------------------------------------------------------
+// Process-level cleanup registry (v1.3.3)
+//
+// Every `init()` boots a fresh `opencode serve` child process via
+// `@opencode-ai/sdk`. The per-case `finally` block in `_node_bridge.js`
+// already calls `shutdown(session)` which closes that child — verified
+// end-to-end. The registry below covers the remaining gap: if the harness
+// process is killed mid-run (SIGINT / SIGTERM) or crashes via
+// `uncaughtException` before the per-case `finally` block fires, the child
+// would otherwise be orphaned and the dynamic port would stay bound until
+// the OS reaps it.
+//
+// On every successful `init()`, the new server is added to `_activeServers`.
+// On every `_stopServer()` call, the entry is removed. A one-shot signal +
+// exit hook drains the registry by calling `server.close()` on each entry
+// (synchronous; the SDK's `close()` only invokes `child_process.kill()`).
+// ---------------------------------------------------------------------------
+const _activeServers = new Set();
+let _signalHooksInstalled = false;
+
+function _portFromUrl(url) {
+  const m = typeof url === 'string' ? url.match(/:(\d+)(?:\/|$)/) : null;
+  return m ? Number(m[1]) : null;
+}
+
+function _drainActiveServers() {
+  for (const entry of [..._activeServers]) {
+    try {
+      if (entry && entry.server && typeof entry.server.close === 'function') {
+        entry.server.close();
+      }
+    } catch (_) { /* best-effort */ }
+    _activeServers.delete(entry);
+  }
+}
+
+function _installSignalHooks() {
+  if (_signalHooksInstalled) return;
+  _signalHooksInstalled = true;
+  // `exit` is the last synchronous chance to clean up — server.close() is
+  // synchronous in the SDK so this is safe.
+  process.on('exit', _drainActiveServers);
+  // Drain then re-raise the signal so default behaviour (exit code 128+N)
+  // still applies. `once()` ensures our handler does not loop on the
+  // re-raised signal.
+  const reRaise = (signal) => {
+    _drainActiveServers();
+    try { process.kill(process.pid, signal); } catch (_) { process.exit(signal === 'SIGINT' ? 130 : 143); }
+  };
+  process.once('SIGINT', () => reRaise('SIGINT'));
+  process.once('SIGTERM', () => reRaise('SIGTERM'));
+  process.once('uncaughtException', (err) => {
+    _drainActiveServers();
+    // eslint-disable-next-line no-console
+    console.error('[opencode_sdk] uncaughtException, drained active servers:', err && err.stack || err);
+    process.exit(1);
+  });
+}
 
 function _err(code, message, retryable) {
   const e = new Error(message);
@@ -86,7 +153,13 @@ async function _waitReady(client, timeoutMs) {
 }
 
 async function _stopServer(server, timeoutMs) {
-  if (!server || typeof server.close !== 'function') return;
+  if (!server || typeof server.close !== 'function') {
+    // Still deregister whatever entry references this server, if any.
+    for (const entry of [..._activeServers]) {
+      if (entry && entry.server === server) _activeServers.delete(entry);
+    }
+    return;
+  }
   let timer;
   try {
     await Promise.race([
@@ -95,6 +168,12 @@ async function _stopServer(server, timeoutMs) {
     ]).catch(() => { /* force-close best-effort */ });
   } finally {
     if (timer) clearTimeout(timer);
+    // Deregister regardless of close() outcome — if the SDK swallowed the
+    // close, the process-level drain handler is no longer responsible for
+    // this entry (calling close() twice on the same proc is a no-op anyway).
+    for (const entry of [..._activeServers]) {
+      if (entry && entry.server === server) _activeServers.delete(entry);
+    }
   }
 }
 
@@ -164,6 +243,14 @@ function create() {
         throw e;
       }
 
+      // Register for process-level cleanup. Re-arms the signal/exit hooks
+      // on every init() — first call installs them, subsequent calls are
+      // no-ops via `_signalHooksInstalled` guard.
+      _installSignalHooks();
+      const port = _portFromUrl(server.url);
+      const serverEntry = { server, port, url: server.url };
+      _activeServers.add(serverEntry);
+
       return {
         server,
         client,
@@ -173,6 +260,7 @@ function create() {
         sessionId: null,
         workspaceDir: cfg.workspace_root || (cfg.workspace && cfg.workspace.dir) || null,
         finalState: null,
+        _serverEntry: serverEntry,
       };
     },
 
@@ -258,4 +346,10 @@ function create() {
   };
 }
 
-module.exports = { create };
+module.exports = {
+  create,
+  // Exposed for tests + external observability — NOT a stable public surface.
+  _activeServers,
+  _drainActiveServers,
+  _activeServerCount: () => _activeServers.size,
+};

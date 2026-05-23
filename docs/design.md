@@ -257,6 +257,17 @@ Layer 4 nightly coverage lives at `tests/harness-scenarios/packages/claude-mock-
 
 Auto-start is the only supported path: callers should not spawn `opencode serve` ahead of time. Each `provider_kind=opencode_sdk` provider instance owns exactly one server with a dynamic port (Phase 9.5 caches one instance per run; parallel cases share that one server via per-case `session.create`).
 
+### Cleanup contract (v1.3.3)
+
+`shutdown()` already closes the in-proc server in its `finally` block once per case, but unhandled signals or `uncaughtException` previously left the spawned `opencode serve` child process orphaned. v1.3.3 adds a module-scoped `_activeServers` registry plus a one-time `_installSignalHooks()` arming step inside `init()`:
+
+- Every successful `init()` registers `{server, port, url}` in `_activeServers` and calls `_installSignalHooks()` (idempotent via `_signalHooksInstalled`).
+- `shutdown()` always deregisters the server after `_stopServer()` finishes — both the timer-finally branch and the no-close-fn branch.
+- `process.on('exit')` and `process.once('SIGINT'|'SIGTERM')` re-raise the signal after draining; `process.once('uncaughtException')` drains then exits with code 1 so no orphan child outlives the harness.
+- `_drainActiveServers()` and `_activeServerCount()` are exposed for tests (`scripts/framework/providers/opencode_sdk/cleanup.test.js`) — NOT a stable public surface.
+
+Net effect: every harness run auto-starts a fresh server on a dynamic port AND guarantees that server is killed — by per-case `finally`, by signal, or by `uncaughtException` — before the harness process exits.
+
 ### Response shape (SDK v1.15.10)
 
 Every `client.session.*` call returns `{data, request, response}` on success or `{error, request, response}` on failure. The provider reads `createResp.data.id` for the session id, `promptResp.data.parts` for the assistant parts, and `final.data.{cost, tokens, title}` in finalize. `session.prompt` requires `body.model` to be a `{providerID, modelID}` object — harness configs carry the model as a `"providerID/modelID"` string and `_parseModel` in `provider.js` splits on the first `/` before sending. (v1.3.2 hotfix; legacy `info.id` / `info.parts` fallbacks are retained for the test mock and any future shape regressions.)

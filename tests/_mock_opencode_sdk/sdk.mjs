@@ -16,6 +16,8 @@
  * echoes <N> back so harness scenarios can assert cross-turn state.
  */
 
+import { appendFileSync } from 'node:fs';
+
 const _scenario = () => (process.env.OPENCODE_SDK_MOCK_SCENARIO || 'happy').trim();
 
 const _sessions = new Map();
@@ -49,10 +51,24 @@ export async function createOpencodeServer(options = {}) {
   }
   const port = 40000 + Math.floor(Math.random() * 20000);
   const hostname = options.hostname || '127.0.0.1';
+  // Optional cleanup log — used by provider.cleanup tests to observe that
+  // server.close() actually fires (per-case + signal/exit-driven). No-op
+  // when OPENCODE_SDK_CLEANUP_LOG is unset.
+  const cleanupLog = process.env.OPENCODE_SDK_CLEANUP_LOG || '';
+  if (cleanupLog) {
+    appendFileSync(cleanupLog, `server.create port=${port}\n`);
+  }
   let closed = false;
   return {
     url: `http://${hostname}:${port}`,
-    close() { closed = true; },
+    close() {
+      closed = true;
+      if (cleanupLog) {
+        // Sync append — close() must be observable from `process.on('exit')`
+        // hooks which cannot await dynamic import.
+        appendFileSync(cleanupLog, `server.close port=${port}\n`);
+      }
+    },
     _isClosed() { return closed; },
   };
 }
