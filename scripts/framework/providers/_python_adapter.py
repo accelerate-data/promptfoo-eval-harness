@@ -90,6 +90,8 @@ def _make_error(code: str, message: str, retryable: bool = False) -> _AdapterErr
 _PROVIDER_REGISTRY: dict[str, str] = {
     "mock": "tests._mock_provider.provider",
     "openhands_sdk": "scripts.framework.providers.openhands_sdk.provider",
+    # Phase 10 (VD-2174-9) — Claude Agent SDK, async lifecycle (uses _maybe_await).
+    "claude_agent_sdk": "scripts.framework.providers.claude_agent_sdk.provider",
     # Async test fixtures (Phase 9.5 — VD-2174-12). Harness L2 tests only.
     "async_mock": "tests._mock_async_python_provider.provider",
     "async_mock_raising": "tests._mock_async_python_provider.provider_raising",

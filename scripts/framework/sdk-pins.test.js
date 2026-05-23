@@ -68,6 +68,40 @@ describe('sdk-pins', () => {
     });
   });
 
+  describe('claude_agent_sdk section', () => {
+    test('has required string fields', () => {
+      const { claude_agent_sdk } = loadSdkPins();
+      assert.strictEqual(typeof claude_agent_sdk.version, 'string', 'version must be string');
+      assert.match(claude_agent_sdk.version, /^\d+\.\d+\.\d+$/, 'version must be semver');
+      assert.strictEqual(typeof claude_agent_sdk.python, 'string', 'python must be string');
+    });
+
+    test('has extras as array', () => {
+      const { claude_agent_sdk } = loadSdkPins();
+      assert.ok(Array.isArray(claude_agent_sdk.extras), 'extras must be array');
+    });
+
+    test('pins claude-agent-sdk at 0.2.85', () => {
+      const { claude_agent_sdk } = loadSdkPins();
+      assert.strictEqual(claude_agent_sdk.version, '0.2.85');
+    });
+
+    test('python constraint covers 3.12', () => {
+      const { claude_agent_sdk } = loadSdkPins();
+      assert.match(claude_agent_sdk.python, /3\.12/, 'python constraint must include 3.12');
+    });
+
+    test('env_allowlist is trimmed to ANTHROPIC_API_KEY (Minimalist #6)', () => {
+      const { claude_agent_sdk } = loadSdkPins();
+      assert.ok(Array.isArray(claude_agent_sdk.env_allowlist), 'env_allowlist must be array');
+      assert.deepStrictEqual(
+        claude_agent_sdk.env_allowlist,
+        ['ANTHROPIC_API_KEY'],
+        'v1.1.0 trims to ANTHROPIC_API_KEY only; Bedrock/Vertex/Foundry envs deferred',
+      );
+    });
+  });
+
   test('throws on missing file', () => {
     assert.throws(
       () => loadSdkPins('/nonexistent/path/sdk-pins.toml'),

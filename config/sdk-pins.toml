@@ -30,3 +30,15 @@ env_allowlist = [
   "OPENCODE_CONFIG",
   "XDG_STATE_HOME",
 ]
+
+[claude_agent_sdk]
+# Phase 10 / VD-2174-9 — Claude Agent SDK provider (v1.1.0).
+# Alpha SDK; canary required on each version bump (spec §9.7).
+version = "0.2.85"
+python = ">=3.12,<3.14"
+extras = []
+# Trimmed env allowlist (Minimalist #6) — Bedrock / Vertex / Foundry backends
+# are out of scope for v1.1.0; re-add when those backends ship.
+env_allowlist = [
+  "ANTHROPIC_API_KEY",
+]
