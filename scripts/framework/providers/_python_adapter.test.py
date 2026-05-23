@@ -49,21 +49,24 @@ def _send(proc: subprocess.Popen, msg: dict[str, Any]) -> dict[str, Any]:
 
 
 def _send_init(proc: subprocess.Popen, msg_id: str = "init-1") -> dict[str, Any]:
-    return _send(proc, {
-        "type": "init",
-        "id": msg_id,
-        "config": {
-            "provider_kind": "mock",
-            "model": "test-model",
-            "sdk_version": "1.0.0",
-            "workspace_root": "/tmp/test-workspace",
-            "tools": [],
-            "permissions": {},
-            "timeout_per_turn_s": 30,
-            "provider_label": "test-label",
-            "extra": {},
+    return _send(
+        proc,
+        {
+            "type": "init",
+            "id": msg_id,
+            "config": {
+                "provider_kind": "mock",
+                "model": "test-model",
+                "sdk_version": "1.0.0",
+                "workspace_root": "/tmp/test-workspace",
+                "tools": [],
+                "permissions": {},
+                "timeout_per_turn_s": 30,
+                "provider_label": "test-label",
+                "extra": {},
+            },
         },
-    })
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -222,12 +225,15 @@ class TestErrorHandling:
         proc = _start_adapter()
         try:
             _send_init(proc)
-            resp = _send(proc, {
-                "type": "turn",
-                "id": "t1",
-                "session_id": "nonexistent-session-xyz",
-                "message": "hello",
-            })
+            resp = _send(
+                proc,
+                {
+                    "type": "turn",
+                    "id": "t1",
+                    "session_id": "nonexistent-session-xyz",
+                    "message": "hello",
+                },
+            )
             # Must be turn_ack (not error) so the subprocess stays alive
             assert resp["type"] == "turn_ack"
             assert resp["id"] == "t1"
