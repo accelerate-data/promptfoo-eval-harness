@@ -87,13 +87,17 @@ def _make_error(code: str, message: str, retryable: bool = False) -> _AdapterErr
 # ---------------------------------------------------------------------------
 _PROVIDER_REGISTRY: dict[str, str] = {
     "mock": "tests._mock_provider.provider",
-    # openhands_sdk: module created in phase 06
-    # "openhands_sdk": "scripts.framework.providers.openhands_sdk.provider",
+    "openhands_sdk": "scripts.framework.providers.openhands_sdk.provider",
 }
 
 
 def _load_provider(kind: str) -> Any:
-    """Import and return the provider module for *kind*. Raises _AdapterError on unknown kind."""
+    """Import and return a provider object for *kind*. Raises _AdapterError on unknown kind.
+
+    If the module exposes a ``create()`` factory (class-based providers like openhands_sdk),
+    call it and return the instance.  Otherwise return the module itself (function-based
+    providers like the ``mock`` test provider).
+    """
     if kind not in _PROVIDER_REGISTRY:
         raise _make_error(
             "UNSUPPORTED_KIND",
@@ -101,12 +105,18 @@ def _load_provider(kind: str) -> Any:
         )
     module_path = _PROVIDER_REGISTRY[kind]
     try:
-        return importlib.import_module(module_path)
+        mod = importlib.import_module(module_path)
     except ImportError as exc:
         raise _make_error(
             "UNSUPPORTED_KIND",
             f"failed to import provider module {module_path!r}: {exc}",
         ) from exc
+
+    # Class-based providers expose create(); function-based providers (legacy/mock)
+    # expose init/turn/finalize/shutdown at module level.
+    if callable(getattr(mod, "create", None)):
+        return mod.create()
+    return mod
 
 
 def _emit(obj: dict[str, Any]) -> None:
