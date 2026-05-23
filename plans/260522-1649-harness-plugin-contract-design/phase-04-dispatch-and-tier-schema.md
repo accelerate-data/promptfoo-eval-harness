@@ -1,6 +1,6 @@
 # Phase 04 — Dispatch + Tier Schema (B.8-B.11)
 
-> **Sub-issue:** VD-2174-3. **Status:** pending. **Blocked by:** phase 03.
+> **Sub-issue:** VD-2174-3. **Status:** complete. **Blocked by:** phase 03.
 > Time budget: ~3 days.
 
 ## Context Links
@@ -130,11 +130,11 @@ bin/ad-evals.js
 
 ## Todo List
 
-- [ ] B.8: Tier config v0 + v1 dual parse + tests + fixtures.
-- [ ] B.9: Single-URL emitter + matrix test + extant test refactor.
-- [ ] B.10: Concurrency clamping + `docs/concurrency.md` + parallel test.
-- [ ] B.11: Package config validator + wiring into `bin/ad-evals.js` + tests.
-- [ ] Confirm v0 legacy fixture still produces a working OpenCode-only Promptfoo config.
+- [x] B.8: Tier config v0 + v1 dual parse + tests + fixtures.
+- [x] B.9: Single-URL emitter + matrix test + extant test refactor.
+- [x] B.10: Concurrency clamping + `docs/concurrency.md` + parallel test.
+- [x] B.11: Package config validator + wiring into `bin/ad-evals.js` + tests.
+- [x] Confirm v0 legacy fixture still produces a working OpenCode-only Promptfoo config.
 
 ## Success Criteria
 
