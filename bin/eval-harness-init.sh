@@ -5,33 +5,44 @@
 # passed.
 #
 # Usage:
-#   eval-harness-init [--force] [--target tests/evals]
+#   eval-harness-init [--force] [--upgrade] [--migrate-from-v0] [--target tests/evals]
 #
 # What it does:
 #   1. Creates <target>/ with packages/, scripts/, config/, docs/.
 #   2. Copies AGENTS.md, opencode.json, eval-tiers.toml, package.json, contract
 #      test, and a harness-smoke starter package into <target>.
-#   3. Adds the .gitignore lines the runtime needs.
-#   4. Installs promptfoo + the harness package via npm if a package.json was
+#   3. Scaffolds tests/harness-scenarios/packages/ skeleton index.json.
+#   4. Scaffolds tests/evals/.tmp/workspaces/.gitkeep.
+#   5. Copies config/sdk-pins.toml from framework if absent.
+#   6. Appends tests/evals/.tmp/ to repo .gitignore (idempotent).
+#   7. Adds the .gitignore lines the runtime needs.
+#   8. Installs promptfoo + the harness package via npm if a package.json was
 #      generated (skipped when --no-install is passed).
-#   5. Adds an npm Dependabot entry for <target> to .github/dependabot.yml so
-#      the repo receives PRs when @accelerate-data/promptfoo-eval-harness releases a new
-#      version (skipped when the entry already exists).
+#   9. Adds an npm Dependabot entry for <target> to .github/dependabot.yml.
+#
+# Flags:
+#   --upgrade           Re-run scaffolding against an existing init'd repo (no overwrite).
+#   --migrate-from-v0   Requires --upgrade. Rewrites config/eval-tiers.toml v0→v1 in place.
+#   --force             Overwrite existing files (without --force, existing files are skipped).
 
 set -euo pipefail
 
 FORCE=0
 INSTALL=1
 TARGET="tests/evals"
+UPGRADE=0
+MIGRATE_V0=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --force) FORCE=1; shift ;;
     --no-install) INSTALL=0; shift ;;
+    --upgrade) UPGRADE=1; shift ;;
+    --migrate-from-v0) MIGRATE_V0=1; shift ;;
     --target) TARGET="$2"; shift 2 ;;
     --target=*) TARGET="${1#*=}"; shift ;;
     -h|--help)
-      sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -40,6 +51,12 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+# Validate flag combinations.
+if [ "$MIGRATE_V0" -eq 1 ] && [ "$UPGRADE" -eq 0 ]; then
+  echo "eval-harness-init: --migrate-from-v0 requires --upgrade" >&2
+  exit 2
+fi
 
 # Locate the harness package root regardless of how this script was invoked
 # (npx, node_modules/.bin, direct path).
@@ -73,7 +90,74 @@ copy_if_absent "$TEMPLATES/package.json"                "$DEST/package.json"
 copy_if_absent "$TEMPLATES/scripts/eval-suite-contract.test.js" "$DEST/scripts/eval-suite-contract.test.js"
 copy_if_absent "$EXAMPLES/harness-smoke/promptfooconfig.json"   "$DEST/packages/harness-smoke/promptfooconfig.json"
 
-# .gitignore lines for the runtime artifacts.
+# ---------------------------------------------------------------------------
+# G.31 — new layout scaffolding
+# ---------------------------------------------------------------------------
+
+# 1. Scaffold tests/harness-scenarios/packages/ skeleton.
+SCENARIOS_DIR="$REPO_ROOT/tests/harness-scenarios/packages"
+if [ ! -d "$SCENARIOS_DIR" ]; then
+  mkdir -p "$SCENARIOS_DIR"
+  echo "  create  $SCENARIOS_DIR/"
+fi
+SCENARIOS_INDEX="$SCENARIOS_DIR/index.json"
+if [ ! -f "$SCENARIOS_INDEX" ]; then
+  cat > "$SCENARIOS_INDEX" <<'JSON'
+{
+  "scenarios": [],
+  "note": "Framework-shipped scenarios live in @accelerate-data/promptfoo-eval-harness; consumer-specific scenarios go here."
+}
+JSON
+  echo "  create  $SCENARIOS_INDEX"
+else
+  echo "  skip    $SCENARIOS_INDEX (exists)"
+fi
+
+# 2. Scaffold tests/evals/.tmp/workspaces/.gitkeep.
+WORKSPACES_GITKEEP="$REPO_ROOT/tests/evals/.tmp/workspaces/.gitkeep"
+if [ ! -f "$WORKSPACES_GITKEEP" ]; then
+  mkdir -p "$(dirname "$WORKSPACES_GITKEEP")"
+  touch "$WORKSPACES_GITKEEP"
+  echo "  create  $WORKSPACES_GITKEEP"
+else
+  echo "  skip    $WORKSPACES_GITKEEP (exists)"
+fi
+
+# 3. Append tests/evals/.tmp/ to repo .gitignore (idempotent).
+REPO_GITIGNORE="$REPO_ROOT/.gitignore"
+EVALS_TMP_ENTRY="tests/evals/.tmp/"
+if [ -f "$REPO_GITIGNORE" ]; then
+  if grep -qxF "$EVALS_TMP_ENTRY" "$REPO_GITIGNORE" 2>/dev/null; then
+    echo "  skip    $REPO_GITIGNORE ($EVALS_TMP_ENTRY already present)"
+  else
+    echo "$EVALS_TMP_ENTRY" >> "$REPO_GITIGNORE"
+    echo "  update  $REPO_GITIGNORE (added $EVALS_TMP_ENTRY)"
+  fi
+else
+  echo "$EVALS_TMP_ENTRY" > "$REPO_GITIGNORE"
+  echo "  create  $REPO_GITIGNORE"
+fi
+
+# 4. Copy config/sdk-pins.toml from framework if absent in consumer repo.
+CONSUMER_SDK_PINS="$REPO_ROOT/config/sdk-pins.toml"
+if [ ! -f "$CONSUMER_SDK_PINS" ]; then
+  mkdir -p "$(dirname "$CONSUMER_SDK_PINS")"
+  # Try templates first; fall back to framework config.
+  if [ -f "$TEMPLATES/sdk-pins.toml" ]; then
+    cp "$TEMPLATES/sdk-pins.toml" "$CONSUMER_SDK_PINS"
+  elif [ -f "$HARNESS_ROOT/config/sdk-pins.toml" ]; then
+    cp "$HARNESS_ROOT/config/sdk-pins.toml" "$CONSUMER_SDK_PINS"
+  else
+    echo "  warn    sdk-pins.toml source not found; skipping" >&2
+  fi
+  if [ -f "$CONSUMER_SDK_PINS" ]; then
+    echo "  create  $CONSUMER_SDK_PINS"
+  fi
+else
+  echo "  skip    $CONSUMER_SDK_PINS (exists)"
+fi
+
+# .gitignore lines for the runtime artifacts (eval-target-local .gitignore).
 GITIGNORE="$DEST/.gitignore"
 ensure_line() {
   line="$1"; file="$2"
@@ -92,6 +176,20 @@ if [ "$INSTALL" -eq 1 ] && [ -f "$DEST/package.json" ]; then
   ( cd "$DEST" && npm install --no-audit --no-fund )
 else
   echo "==> Skipping npm install. Run: cd $DEST && npm install"
+fi
+
+# ---------------------------------------------------------------------------
+# G.29 — --upgrade --migrate-from-v0: in-place v0→v1 rewrite
+# ---------------------------------------------------------------------------
+if [ "$MIGRATE_V0" -eq 1 ]; then
+  CONSUMER_TIER_CONFIG="$DEST/config/eval-tiers.toml"
+  if [ ! -f "$CONSUMER_TIER_CONFIG" ]; then
+    echo "eval-harness-init: --migrate-from-v0: no config found at $CONSUMER_TIER_CONFIG" >&2
+    exit 1
+  fi
+  echo "==> Migrating $CONSUMER_TIER_CONFIG (v0 → v1)..."
+  node "$HARNESS_ROOT/scripts/framework/migrate-from-v0.js" "$CONSUMER_TIER_CONFIG"
+  echo "  done  migration complete (idempotent: re-running is safe)"
 fi
 
 # Add a Dependabot npm entry for the eval target so consumer repos get PRs
