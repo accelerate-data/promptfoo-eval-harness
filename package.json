@@ -1,6 +1,6 @@
 {
   "name": "@accelerate-data/promptfoo-eval-harness",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Promptfoo + OpenCode eval harness for agent behavior. Owns model/tier policy, provider wiring, package discovery, state export, and artifact guards. Consumers own eval YAML, prompts, fixtures, and assertions.",
   "license": "Elastic-2.0",
   "repository": {
@@ -33,6 +33,8 @@
   },
   "dependencies": {
     "@opencode-ai/sdk": "1.15.10",
+    "@openai/codex": "0.133.0",
+    "@openai/codex-sdk": "0.133.0",
     "js-yaml": "^4.1.1",
     "p-limit": "^3.1.0",
     "promptfoo": "0.121.11",
