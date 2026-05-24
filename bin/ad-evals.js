@@ -35,6 +35,7 @@ function bootstrapEvalRoot() {
 function ensureDepsInstalled() {
   const evalRoot = process.env.AD_EVALS_ROOT;
   if (!evalRoot) return;
+  if (!fs.existsSync(path.join(evalRoot, 'package.json'))) return;
 
   const lockfile = path.join(evalRoot, 'package-lock.json');
   const stamp = path.join(evalRoot, 'node_modules', '.install-stamp');
