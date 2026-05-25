@@ -41,6 +41,7 @@ def build_agent(
     cfg: "ProviderConfig",
     tool_registry_mod: Any,
     model_resolver_mod: Any,
+    callbacks: list[Any] | None = None,
 ) -> tuple[Any, Any]:
     """Construct and return (agent, conversation) from *cfg*.
 
@@ -48,6 +49,11 @@ def build_agent(
         cfg:               ProviderConfig from the adapter init message.
         tool_registry_mod: the tool_registry module (or a mock with get_allowed_tools).
         model_resolver_mod: the model_resolver module (or a mock with resolve_model).
+        callbacks:         optional list of event callbacks. Passed to
+                           Conversation(callbacks=...) at construction time —
+                           the real LocalConversation in openhands-sdk 1.22.1
+                           does NOT expose ``_callbacks`` or ``add_callback()``,
+                           so registration must happen here.
 
     Returns:
         (agent, conversation) where conversation is a LocalConversation instance
@@ -141,11 +147,16 @@ def build_agent(
 
     # --- Conversation construction ---------------------------------------
     # workspace_root from cfg; delete_on_close=False — bridge owns cleanup (§7.3).
+    # callbacks=[...] MUST be passed here for the real SDK — LocalConversation
+    # in openhands-sdk 1.22.1 has no _callbacks list or add_callback() method.
     workspace = cfg.workspace_root or os.path.join(os.getcwd(), "workspace")
-    conversation = Conversation(
-        agent=agent,
-        workspace=workspace,
-        delete_on_close=False,
-    )
+    conv_kwargs: dict[str, Any] = {
+        "agent": agent,
+        "workspace": workspace,
+        "delete_on_close": False,
+    }
+    if callbacks:
+        conv_kwargs["callbacks"] = callbacks
+    conversation = Conversation(**conv_kwargs)
 
     return agent, conversation

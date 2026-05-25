@@ -64,9 +64,15 @@ class OpenHandsSDKProvider:
 
         extractor = EventExtractor()
 
-        # Build agent + conversation; conversation callback captures events.
+        # Build agent + conversation with the event callback wired at
+        # construction time.  Real openhands-sdk 1.22.1 LocalConversation
+        # has no _callbacks attribute and no add_callback() method, so
+        # callbacks must be passed via the constructor.  The mock SDK
+        # accepts the same kwarg for symmetry.
         try:
-            _agent, conversation = af.build_agent(cfg, tr, mr)
+            _agent, conversation = af.build_agent(
+                cfg, tr, mr, callbacks=[extractor.on_event]
+            )
         except ProviderRuntimeError:
             raise
         except Exception as exc:
@@ -74,18 +80,6 @@ class OpenHandsSDKProvider:
                 code="sdk_error",
                 message=f"agent construction failed: {exc}",
             ) from exc
-
-        # Register the event callback.  MockConversation exposes add_callback();
-        # real LocalConversation accepts callbacks=[...] at construction time.
-        # agent_factory passes no callbacks — we add them here after construction
-        # via add_callback() if available, otherwise rebuild via stored reference.
-        # Simplest portable approach: patch the stored _callbacks list directly.
-        if hasattr(conversation, "_callbacks"):
-            conversation._callbacks.append(extractor.on_event)
-        elif hasattr(conversation, "add_callback"):
-            conversation.add_callback(extractor.on_event)
-        else:
-            _log.warning("conversation has no _callbacks attr; events may not be captured")
 
         return _Session(conversation=conversation, extractor=extractor)
 
