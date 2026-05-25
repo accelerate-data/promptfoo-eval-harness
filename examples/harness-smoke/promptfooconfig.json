@@ -3,12 +3,13 @@
   "metadata": {
     "eval_tier": "light"
   },
-  "prompts": [
-    "Return JSON only: {\"scenario\":\"harness-smoke\",\"ok\":true,\"failures\":[]}"
-  ],
+  "prompts": ["file://prompts/example.txt"],
   "tests": [
     {
       "description": "[smoke] harness-smoke",
+      "vars": {
+        "label": "harness-smoke"
+      },
       "assert": [
         {
           "type": "javascript",

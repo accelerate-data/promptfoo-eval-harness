@@ -1,0 +1,4 @@
+{
+  "_doc": "Fixtures hold reusable test inputs (sample data, message transcripts, large prompt context). Reference from promptfooconfig.json via `vars: { input: \"file://fixtures/<name>.json\" }`, or load directly inside assertions. This file is a placeholder — replace with your scenario's inputs.",
+  "samples": []
+}

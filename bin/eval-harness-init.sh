@@ -89,6 +89,8 @@ copy_if_absent "$TEMPLATES/config/eval-tiers.toml"      "$DEST/config/eval-tiers
 copy_if_absent "$TEMPLATES/package.json"                "$DEST/package.json"
 copy_if_absent "$TEMPLATES/scripts/eval-suite-contract.test.js" "$DEST/scripts/eval-suite-contract.test.js"
 copy_if_absent "$EXAMPLES/harness-smoke/promptfooconfig.json"   "$DEST/packages/harness-smoke/promptfooconfig.json"
+copy_if_absent "$EXAMPLES/harness-smoke/prompts/example.txt"    "$DEST/packages/harness-smoke/prompts/example.txt"
+copy_if_absent "$EXAMPLES/harness-smoke/fixtures/example.json"  "$DEST/packages/harness-smoke/fixtures/example.json"
 
 # ---------------------------------------------------------------------------
 # G.31 — new layout scaffolding

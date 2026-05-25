@@ -1,0 +1,1 @@
+Return JSON only: {"scenario":"{{label}}","ok":true,"failures":[]}
