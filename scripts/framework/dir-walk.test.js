@@ -216,6 +216,90 @@ describe('runScenarios L1 exit-code aggregation', () => {
 });
 
 // ---------------------------------------------------------------------------
+// L1 — injectProviders path (consumer-owned scenarios)
+// ---------------------------------------------------------------------------
+
+describe('spawnScenario L1 injectProviders', () => {
+  test('default (injectProviders=false) does not call writeResolvedConfig', async () => {
+    const { spawnScenario } = require('./dir-walk');
+    const tmpDir = makeTmpDir();
+    try {
+      fs.writeFileSync(path.join(tmpDir, 'promptfooconfig.json'), '{}');
+      let called = false;
+      const writeStub = () => {
+        called = true;
+        return 'should-not-reach';
+      };
+      // Spawn will exit non-zero (no real promptfoo entrypoint resolvable from
+      // this tmp scenario), but that's fine — we only assert writeStub was not
+      // invoked. harnessRoot points at a non-existent dir so the spawn dies fast.
+      await spawnScenario(tmpDir, process.env, '/nonexistent-harness-root', {
+        writeResolvedConfig: writeStub,
+      });
+      assert.equal(called, false, 'writeResolvedConfig must not be called when injectProviders=false');
+    } finally {
+      rmTmpDir(tmpDir);
+    }
+  });
+
+  test('injectProviders=true calls writeResolvedConfig with the relative config path', async () => {
+    const { spawnScenario } = require('./dir-walk');
+    const { EVAL_ROOT } = require('./roots');
+    // Place a fake scenario dir under EVAL_ROOT so the relative path is stable.
+    const scenarioDir = path.join(EVAL_ROOT, '.tmp', 'dir-walk-test-inject');
+    fs.mkdirSync(scenarioDir, { recursive: true });
+    try {
+      fs.writeFileSync(path.join(scenarioDir, 'promptfooconfig.json'), '{}');
+      // Stub returns a relative path that resolves to an unreachable config —
+      // promptfoo will fail, but we only assert the stub was called with the
+      // expected relative input. Use a directory we can actually create.
+      const materializedRel = path.posix.join('.tmp', 'dir-walk-test-inject', 'promptfooconfig.json');
+      let stubArg = null;
+      const writeStub = (rel) => {
+        stubArg = rel;
+        return materializedRel;
+      };
+      await spawnScenario(scenarioDir, process.env, '/nonexistent-harness-root', {
+        injectProviders: true,
+        writeResolvedConfig: writeStub,
+      });
+      assert.equal(
+        path.normalize(stubArg),
+        path.normalize(path.join('.tmp', 'dir-walk-test-inject', 'promptfooconfig.json')),
+        `writeResolvedConfig stub was called with unexpected path: ${stubArg}`,
+      );
+    } finally {
+      rmTmpDir(scenarioDir);
+    }
+  });
+
+  test('runScenarios forwards injectProviders + writeResolvedConfig into spawnScenario', async () => {
+    const tmpRoot = makeTmpDir();
+    try {
+      stubScenarios(tmpRoot, ['alpha', 'beta']);
+      const calls = [];
+      const writeStub = (rel) => {
+        calls.push(rel);
+        // Return a relative path that maps to a writable but empty file inside EVAL_ROOT
+        // so the spawn child fails quickly without crashing the test.
+        return path.posix.join('.tmp', 'dir-walk-test-runs', path.basename(rel));
+      };
+
+      const { runScenarios: runScenariosFn } = require('./dir-walk');
+      await runScenariosFn(tmpRoot, {
+        harnessRoot: '/nonexistent-harness-root',
+        env: process.env,
+        injectProviders: true,
+        writeResolvedConfig: writeStub,
+      });
+      assert.equal(calls.length, 2, `expected 2 writeResolvedConfig calls, got ${calls.length}`);
+    } finally {
+      rmTmpDir(tmpRoot);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // L2 — real scenario integration (gated behind SKIP_INTEGRATION)
 // ---------------------------------------------------------------------------
 

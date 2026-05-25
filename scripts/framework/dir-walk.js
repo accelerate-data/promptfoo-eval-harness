@@ -15,6 +15,10 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const { getOuterLimit } = require('./concurrency');
+const {
+  writeResolvedConfig: defaultWriteResolvedConfig,
+} = require('./resolve-promptfoo-config');
+const { EVAL_ROOT } = require('./roots');
 
 // ---------------------------------------------------------------------------
 // Scenario enumeration
@@ -53,18 +57,40 @@ function* walkScenarios(rootDir) {
 /**
  * Spawn Promptfoo directly for one scenario directory.
  *
- * Scenarios are self-contained (providers already wired in promptfooconfig.json)
- * and live outside the eval root, so they bypass the guard (run-promptfoo-with-guard)
- * and invoke the Promptfoo entrypoint directly.
+ * Two modes:
+ *  - Default (`injectProviders=false`): the scenario config is self-contained
+ *    (providers already wired in promptfooconfig.json), so spawn Promptfoo
+ *    against it directly. This is the harness-owned scenarios path
+ *    (`tests/harness-scenarios/`) — they live outside EVAL_ROOT and bypass
+ *    both the guard and tier-driven provider injection.
+ *  - Consumer-injection (`injectProviders=true`): the scenario config lives
+ *    inside EVAL_ROOT and only declares `metadata.eval_tier` — its providers
+ *    come from `config/eval-tiers.toml`. Run `writeResolvedConfig` once before
+ *    spawn so the materialized config under `.tmp/resolved-configs/...` carries
+ *    the resolved provider block. Mirrors what `run-promptfoo-with-guard.main`
+ *    does for the single-config flow, just per-scenario for the fan-out tree.
  *
  * @param {string} scenarioDir - Absolute path to the scenario directory.
  * @param {NodeJS.ProcessEnv} env - Environment to pass to the child process.
  * @param {string} harnessRoot - Repo root (used to locate node_modules/promptfoo).
+ * @param {object} [options]
+ * @param {boolean} [options.injectProviders=false] - Materialize tier providers.
+ * @param {Function} [options.writeResolvedConfig] - Override for tests.
  * @returns {Promise<{name: string, exitCode: number, stdout: string, stderr: string, durationMs: number}>}
  */
-function spawnScenario(scenarioDir, env, harnessRoot) {
+function spawnScenario(scenarioDir, env, harnessRoot, options = {}) {
+  const {
+    injectProviders = false,
+    writeResolvedConfig: writeResolved = defaultWriteResolvedConfig,
+  } = options;
   const name = path.basename(scenarioDir);
-  const configPath = path.join(scenarioDir, 'promptfooconfig.json');
+  let configPath = path.join(scenarioDir, 'promptfooconfig.json');
+
+  if (injectProviders) {
+    const relConfig = path.relative(EVAL_ROOT, configPath);
+    const materializedRel = writeResolved(relConfig);
+    configPath = path.join(EVAL_ROOT, materializedRel);
+  }
   // Invoke Promptfoo entrypoint directly — scenarios are self-contained and
   // live outside EVAL_ROOT, so they do not go through run-promptfoo-with-guard.
   const promptfooEntrypoint = path.join(
@@ -142,9 +168,16 @@ function spawnScenario(scenarioDir, env, harnessRoot) {
  * @param {number|string} [opts.concurrency] - Override for outer concurrency cap.
  * @param {NodeJS.ProcessEnv} [opts.env] - Environment for child processes.
  * @param {string} [opts.harnessRoot] - Harness repo root (default: process.cwd()).
+ * @param {boolean} [opts.injectProviders=false] - Materialize tier providers
+ *   for each scenario before spawn. Set when `rootDir` lives inside EVAL_ROOT
+ *   (consumer-owned scenarios that rely on `config/eval-tiers.toml`).
+ * @param {Function} [opts.writeResolvedConfig] - Override for tests.
  * @returns {Promise<{results: Array, totalDurationMs: number, aggregatedExitCode: number}>}
  */
-async function runScenarios(rootDir, { concurrency, env, harnessRoot } = {}) {
+async function runScenarios(
+  rootDir,
+  { concurrency, env, harnessRoot, injectProviders = false, writeResolvedConfig: writeResolved } = {},
+) {
   const scenarioDirs = [...walkScenarios(rootDir)];
 
   if (scenarioDirs.length === 0) {
@@ -165,10 +198,13 @@ async function runScenarios(rootDir, { concurrency, env, harnessRoot } = {}) {
 
   const childEnv = env ? { ...process.env, ...env } : process.env;
 
+  const spawnOptions = { injectProviders };
+  if (writeResolved) spawnOptions.writeResolvedConfig = writeResolved;
+
   const startMs = Date.now();
   const results = await Promise.all(
     scenarioDirs.map((scenarioDir) =>
-      limit(() => spawnScenario(scenarioDir, childEnv, resolvedRoot)),
+      limit(() => spawnScenario(scenarioDir, childEnv, resolvedRoot, spawnOptions)),
     ),
   );
 

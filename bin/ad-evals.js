@@ -320,18 +320,34 @@ function _globUvCache(dir, version) {
  * Run all scenarios in a directory tree (dir-walk fan-out).
  * Emits a per-scenario PASS/FAIL summary and returns the aggregated exit code.
  *
+ * When `rootDir` lives inside EVAL_ROOT (consumer-owned scenarios that declare
+ * only `metadata.eval_tier`), the fan-out materializes each scenario through
+ * `writeResolvedConfig` so tier providers from `config/eval-tiers.toml` are
+ * injected — matching the single-config flow. Harness-owned scenarios under
+ * `tests/harness-scenarios/` stay on the direct-spawn fast path.
+ *
  * @param {string} rootDir - Scenarios tree root directory.
+ * @param {{evalRoot: string}} paths - Resolved harness paths.
  * @param {object} logger - Console-like logger.
  * @returns {Promise<number>} exit code
  */
-async function runDirScenarios(rootDir, logger) {
-  // Determine harnessRoot: the repo root (two levels up from tests/evals, or git root).
+async function runDirScenarios(rootDir, paths, logger) {
   const harnessRoot = path.resolve(__dirname, '..');
-  logger.log(`ad-evals run: directory mode — scanning ${rootDir}`);
+  const evalRootResolved = path.resolve(paths.evalRoot);
+  const relFromEvalRoot = path.relative(evalRootResolved, path.resolve(rootDir));
+  const injectProviders = Boolean(
+    relFromEvalRoot &&
+      !relFromEvalRoot.startsWith('..') &&
+      !path.isAbsolute(relFromEvalRoot),
+  );
+
+  const suffix = injectProviders ? ' (consumer scenarios — injecting providers from eval-tiers.toml)' : '';
+  logger.log(`ad-evals run: directory mode — scanning ${rootDir}${suffix}`);
 
   const { results, totalDurationMs, aggregatedExitCode } = await runScenarios(rootDir, {
     harnessRoot,
     env: process.env,
+    injectProviders,
   });
 
   if (results.length === 0) {
@@ -452,7 +468,7 @@ function run(
         rest = [directConfig, ...extraRunArgs];
       } else {
         // Scenarios tree — async fan-out via dir-walk.
-        return runDirScenarios(absArg, logger);
+        return runDirScenarios(absArg, paths, logger);
       }
     }
     // Fall through: single config file (rest already correct).
