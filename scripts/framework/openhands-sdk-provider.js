@@ -1,5 +1,6 @@
 // OpenHands SDK provider for promptfoo. Lives inside the harness so consumers
-// can reference it via `framework://scripts/openhands-sdk-provider.js`.
+// can reference it via `framework://openhands-sdk-provider.js` (resolves to
+// <FRAMEWORK_ROOT>/openhands-sdk-provider.js, i.e. this file).
 //
 // Receives the standard v0-shape harness config from resolveProviderBlock
 // ({ agent, opencode_config, project_dir, format, ... }) and translates it
@@ -18,7 +19,7 @@
 
 const crypto = require('node:crypto');
 
-const makeBridge = require('./framework/_node_bridge.js');
+const makeBridge = require('./_node_bridge.js');
 
 const TIER_TO_MODEL = {
   eval_light: 'openai/gpt-4o-mini',
