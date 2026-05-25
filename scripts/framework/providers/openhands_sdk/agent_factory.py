@@ -26,6 +26,17 @@ Per-tier UX (eval-tiers.toml v1 schema):
     model = "gpt-4o"
     [tiers.standard.providers.extra]
     base_url = "https://gateway.internal/v1"
+
+Consumer-side .env overrides (v1.4.1):
+    * `OPENHANDS_MODEL_OVERRIDE` — when set, replaces ``cfg.model`` before
+      resolution. Applies to BOTH gateway and legacy modes; lets engineers
+      switch model without editing eval-tiers.toml.
+    * `OPENHANDS_BASE_URL` — when set, replaces ``cfg.extra.base_url`` and
+      forces gateway mode. Useful for pointing at a local OpenHands server
+      (e.g. ``http://127.0.0.1:8000/v1``) without changing the tier config.
+    Both env vars must be listed in ``config/sdk-pins.toml`` →
+    ``[openhands_sdk].env_allowlist`` so the Node bridge forwards them to the
+    Python subprocess (env_allowlist is the only whitelist).
 """
 
 from __future__ import annotations
@@ -64,26 +75,34 @@ def build_agent(
     """
     from _errors import ProviderRuntimeError  # noqa: PLC0415
 
-    base_url = cfg.extra.get("base_url") if cfg.extra else None
+    # Env overrides (v1.4.1): consumer-side .env wins over eval-tiers.toml so
+    # engineers can flip model / point at a local server without editing the
+    # tier config. Treat empty strings as unset.
+    env_base_url = os.environ.get("OPENHANDS_BASE_URL") or None
+    env_model_override = os.environ.get("OPENHANDS_MODEL_OVERRIDE") or None
+
+    cfg_base_url = cfg.extra.get("base_url") if cfg.extra else None
+    base_url = env_base_url or cfg_base_url
     gateway_mode = bool(base_url)
+    effective_model = env_model_override or cfg.model
 
     # --- Model resolution ------------------------------------------------
     if gateway_mode:
         # Gateway mode: model passes through verbatim, no alias map / prefix
         # routing. Default LLM params come from the resolver's constants so
         # gateway and legacy modes stay aligned.
-        model_str = cfg.model
+        model_str = effective_model
         default_temperature = 0.0
         default_max_tokens = 4096
     else:
         try:
-            llm_cfg = model_resolver_mod.resolve_model(cfg.model)
+            llm_cfg = model_resolver_mod.resolve_model(effective_model)
         except ProviderRuntimeError:
             raise
         except Exception as exc:
             raise ProviderRuntimeError(
                 code="sdk_error",
-                message=f"model resolution failed for {cfg.model!r}: {exc}",
+                message=f"model resolution failed for {effective_model!r}: {exc}",
             ) from exc
         model_str = llm_cfg["model"]
         default_temperature = llm_cfg["temperature"]

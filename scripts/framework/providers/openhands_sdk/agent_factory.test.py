@@ -276,3 +276,98 @@ class TestGatewayMode:
         agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
         assert agent.llm.base_url is None
         assert agent.llm.model == "anthropic/claude-sonnet-4-6"
+
+
+class TestEnvOverrides:
+    """v1.4.1 — `.env`-driven knobs override tier config so consumers can flip
+    model / point at a local server without editing eval-tiers.toml."""
+
+    def _make_cfg(self, **kwargs):
+        from _contract import ProviderConfig
+
+        defaults = dict(
+            provider_kind="openhands_sdk",
+            model="claude-sonnet-4-6",
+            sdk_version="1.22.1",
+            workspace_root="/tmp/ws",
+            tools=[],
+            permissions={},
+            timeout_per_turn_s=300,
+        )
+        defaults.update(kwargs)
+        return ProviderConfig(**defaults)
+
+    # --- OPENHANDS_BASE_URL ------------------------------------------------
+
+    def test_env_base_url_triggers_gateway_mode(self, monkeypatch) -> None:
+        """OPENHANDS_BASE_URL set + no cfg.extra.base_url → gateway mode on."""
+        from agent_factory import build_agent
+
+        monkeypatch.setenv("OPENHANDS_BASE_URL", "http://127.0.0.1:8000/v1")
+        monkeypatch.delenv("OPENHANDS_MODEL_OVERRIDE", raising=False)
+        cfg = self._make_cfg(model="gpt-4o")  # no cfg.extra.base_url
+        agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
+        # Gateway path: model passes through verbatim (resolver NOT called)
+        assert agent.llm.base_url == "http://127.0.0.1:8000/v1"
+        assert agent.llm.model == "gpt-4o"
+
+    def test_env_base_url_overrides_cfg_extra_base_url(self, monkeypatch) -> None:
+        """When both are set, .env wins so consumer can redirect locally."""
+        from agent_factory import build_agent
+
+        monkeypatch.setenv("OPENHANDS_BASE_URL", "http://127.0.0.1:8000/v1")
+        monkeypatch.delenv("OPENHANDS_MODEL_OVERRIDE", raising=False)
+        cfg = self._make_cfg(
+            model="gpt-4o",
+            extra={"base_url": "https://gateway.internal/v1"},
+        )
+        agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
+        assert agent.llm.base_url == "http://127.0.0.1:8000/v1"
+
+    def test_env_base_url_empty_string_falls_back_to_cfg(self, monkeypatch) -> None:
+        """Empty OPENHANDS_BASE_URL is treated as unset (consumer .env hygiene)."""
+        from agent_factory import build_agent
+
+        monkeypatch.setenv("OPENHANDS_BASE_URL", "")
+        monkeypatch.delenv("OPENHANDS_MODEL_OVERRIDE", raising=False)
+        cfg = self._make_cfg(
+            model="gpt-4o",
+            extra={"base_url": "https://gateway.internal/v1"},
+        )
+        agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
+        assert agent.llm.base_url == "https://gateway.internal/v1"
+
+    # --- OPENHANDS_MODEL_OVERRIDE -----------------------------------------
+
+    def test_env_model_override_in_legacy_mode(self, monkeypatch) -> None:
+        """Override propagates through the resolver (legacy / no base_url)."""
+        from agent_factory import build_agent
+
+        monkeypatch.delenv("OPENHANDS_BASE_URL", raising=False)
+        monkeypatch.setenv("OPENHANDS_MODEL_OVERRIDE", "haiku-4-5")
+        cfg = self._make_cfg(model="claude-sonnet-4-6")
+        agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
+        # Resolver prefixes with "anthropic/" — proves override fed the resolver,
+        # not cfg.model.
+        assert agent.llm.model == "anthropic/haiku-4-5"
+
+    def test_env_model_override_in_gateway_mode(self, monkeypatch) -> None:
+        """Override bypasses resolver in gateway mode (passes through verbatim)."""
+        from agent_factory import build_agent
+
+        monkeypatch.setenv("OPENHANDS_BASE_URL", "http://127.0.0.1:8000/v1")
+        monkeypatch.setenv("OPENHANDS_MODEL_OVERRIDE", "opencode-go/glm-5.1")
+        cfg = self._make_cfg(model="gpt-4o")
+        agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
+        assert agent.llm.model == "opencode-go/glm-5.1"
+        assert agent.llm.base_url == "http://127.0.0.1:8000/v1"
+
+    def test_env_model_override_empty_string_falls_back_to_cfg(self, monkeypatch) -> None:
+        """Empty OPENHANDS_MODEL_OVERRIDE is treated as unset."""
+        from agent_factory import build_agent
+
+        monkeypatch.delenv("OPENHANDS_BASE_URL", raising=False)
+        monkeypatch.setenv("OPENHANDS_MODEL_OVERRIDE", "")
+        cfg = self._make_cfg(model="claude-sonnet-4-6")
+        agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
+        assert agent.llm.model == "anthropic/claude-sonnet-4-6"

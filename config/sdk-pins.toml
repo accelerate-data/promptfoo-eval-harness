@@ -19,11 +19,16 @@ python = ">=3.12,<3.14"
 extras = []
 # Env vars forwarded to the Python subprocess. All other keys matching
 # secret patterns (*_API_KEY, *_TOKEN, *_SECRET, etc.) are stripped. See §7.1.
+# OPENHANDS_BASE_URL and OPENHANDS_MODEL_OVERRIDE: consumer-side .env knobs for
+# pointing the provider at a local/staging gateway and forcing a specific model
+# without editing eval-tiers.toml. See agent_factory.py module docstring.
 env_allowlist = [
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
   "OPENROUTER_API_KEY",
   "OPENHANDS_API_KEY",
+  "OPENHANDS_BASE_URL",
+  "OPENHANDS_MODEL_OVERRIDE",
   "OPENHANDS_SUPPRESS_BANNER",
 ]
 
