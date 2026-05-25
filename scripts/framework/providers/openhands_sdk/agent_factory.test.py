@@ -96,7 +96,7 @@ def _make_mock_sdk_module():
 class _MockToolRegistry:
     @staticmethod
     def get_allowed_tools(names=None):
-        names = names or ["BashTool"]
+        names = names or ["terminal"]
         return [_MockTool(name=n) for n in names]
 
 
@@ -180,10 +180,10 @@ class TestBuildAgent:
     def test_agent_carries_tools(self) -> None:
         from agent_factory import build_agent
 
-        cfg = self._make_cfg(tools=["BashTool"])
+        cfg = self._make_cfg(tools=["terminal"])
         agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
         assert len(agent.tools) == 1
-        assert agent.tools[0].name == "BashTool"
+        assert agent.tools[0].name == "terminal"
 
     def test_system_prompt_passed_through(self) -> None:
         from agent_factory import build_agent

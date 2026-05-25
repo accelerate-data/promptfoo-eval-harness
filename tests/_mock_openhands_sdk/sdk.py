@@ -74,19 +74,19 @@ class Tool:
         self.params = params or {}
 
 
-class BashTool(Tool):
+class Terminal(Tool):
     def __init__(self) -> None:
-        super().__init__(name="BashTool")
+        super().__init__(name="terminal")
 
 
-class FileReadTool(Tool):
+class TaskTracker(Tool):
     def __init__(self) -> None:
-        super().__init__(name="FileReadTool")
+        super().__init__(name="task_tracker")
 
 
-class FileEditTool(Tool):
+class FileEditor(Tool):
     def __init__(self) -> None:
-        super().__init__(name="FileEditTool")
+        super().__init__(name="file_editor")
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +225,7 @@ class MockConversation:
             events.append(
                 ActionEvent(
                     call_id=call_id,
-                    tool_name="BashTool",
+                    tool_name="terminal",
                     tool_params={"cmd": "echo hello"},
                 )
             )

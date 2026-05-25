@@ -82,13 +82,13 @@ SIMPLE_FIXTURE = [
 TOOL_CALL_FIXTURE = [
     SystemPromptEvent(),
     MessageEvent(source="user", content=[TextContent("use bash")]),
-    ActionEvent(call_id="c1", tool_name="BashTool", tool_params={"cmd": "ls"}),
+    ActionEvent(call_id="c1", tool_name="terminal", tool_params={"cmd": "ls"}),
     ObservationEvent(cause="c1", content="file1.txt\nfile2.txt"),
     MessageEvent(source="agent", content=[TextContent("Found files.")]),
 ]
 
 TOOL_ERROR_FIXTURE = [
-    ActionEvent(call_id="c2", tool_name="BashTool", tool_params={"cmd": "rm -rf /"}),
+    ActionEvent(call_id="c2", tool_name="terminal", tool_params={"cmd": "rm -rf /"}),
     ObservationEvent(cause="c2", content="", error="Permission denied"),
 ]
 
@@ -142,7 +142,7 @@ class TestToolCallTurn:
     def test_tool_call_name(self) -> None:
         result = _run_fixture(TOOL_CALL_FIXTURE)
         assert len(result.tool_calls) == 1
-        assert result.tool_calls[0].name == "BashTool"
+        assert result.tool_calls[0].name == "terminal"
 
     def test_tool_call_arguments(self) -> None:
         result = _run_fixture(TOOL_CALL_FIXTURE)
@@ -240,7 +240,7 @@ class TestStartTurnReset:
     def test_reset_clears_tool_calls(self) -> None:
         ex = EventExtractor()
         ex.start_turn()
-        ex.on_event(ActionEvent(call_id="x1", tool_name="BashTool", tool_params={}))
+        ex.on_event(ActionEvent(call_id="x1", tool_name="terminal", tool_params={}))
         ex.on_event(ObservationEvent(cause="x1", content="ok"))
         ex.end_turn()
 

@@ -6,6 +6,12 @@
 
 [openhands_sdk]
 version = "1.22.1"
+# Tools moved out of openhands-sdk into the companion openhands-tools package
+# as of v1.22+. The harness whitelist (tool_registry.py) references the names
+# registered by openhands-tools, so this pin must always accompany the SDK
+# version in the spawn argv. Bump both in lockstep — there is no published
+# compatibility matrix yet, so a smoke run is required on every change.
+tools_version = "1.23.0"
 python = ">=3.12,<3.14"
 # extras: empty — confirmed by spike A.0 (no extras group required).
 # If a future version requires extras (e.g. ["tools"]), update here AND
@@ -17,6 +23,7 @@ env_allowlist = [
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
   "OPENROUTER_API_KEY",
+  "OPENHANDS_API_KEY",
   "OPENHANDS_SUPPRESS_BANNER",
 ]
 

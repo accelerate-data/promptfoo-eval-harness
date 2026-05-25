@@ -105,13 +105,17 @@ const KIND_REGISTRY = {
     mode: 'subprocess',
     // adapter: kept for backward-compat with existing tests that verify the path.
     adapter: _ADAPTER_PATH,
-    // spawn: full uv argv — version sourced dynamically from sdk-pins.toml (loadSdkPins).
+    // spawn: full uv argv — versions sourced dynamically from sdk-pins.toml.
+    // Both openhands-sdk and openhands-tools are required: as of 1.22+, tool
+    // registrations (terminal, file_editor, …) live in the companion package
+    // and the SDK's Tool(name=...) lookup fails without it.
     // Computed as a getter so test overrides to sdk-pins path propagate correctly.
     get spawn() {
-      const version = loadSdkPins().openhands_sdk.version;
+      const pins = loadSdkPins().openhands_sdk;
       return [
         'uv', 'run', '--python', '3.12',
-        '--with', `openhands-sdk==${version}`,
+        '--with', `openhands-sdk==${pins.version}`,
+        '--with', `openhands-tools==${pins.tools_version}`,
         'python', '-m', 'scripts.framework.providers._python_adapter',
         '--kind=openhands_sdk',
       ];
@@ -314,8 +318,9 @@ function _buildSpawnSpec(kind, adapterPath) {
     args = spawnArgv.slice(1);
   } else if (kind === 'openhands_sdk') {
     const version = kindPins.version;
+    const toolsVersion = kindPins.tools_version;
     cmd = 'uv';
-    args = ['run', '--python', '3.12', '--with', `openhands-sdk==${version}`, 'python', adapterPath, `--kind=${kind}`];
+    args = ['run', '--python', '3.12', '--with', `openhands-sdk==${version}`, '--with', `openhands-tools==${toolsVersion}`, 'python', adapterPath, `--kind=${kind}`];
   } else {
     // Generic subprocess kind (future)
     cmd = 'uv';

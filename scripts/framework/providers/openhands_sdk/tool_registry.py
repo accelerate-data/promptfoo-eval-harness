@@ -8,7 +8,8 @@ Tool classes are lazy-imported so this module loads without openhands-sdk instal
 Spike A.0 verdict: Tool is a Pydantic config spec (name: str, params: dict[str, Any]).
 Actual OpenHands SDK pattern:
     from openhands.sdk import Tool
-    tools = [Tool(name="BashTool", params={}), ...]
+    import openhands.tools  # side-effect registers names
+    tools = [Tool(name="terminal", params={}), ...]
 """
 
 from __future__ import annotations
@@ -21,8 +22,21 @@ if TYPE_CHECKING:
     pass
 
 # Whitelist: canonical tool names recognised by the OpenHands SDK registry.
-# Spike A.0.B confirmed these names are valid for openhands-sdk==1.22.1.
-ALLOWED_TOOL_NAMES: set[str] = {"BashTool", "FileReadTool", "FileEditTool"}
+# As of openhands-sdk==1.22.1 + openhands-tools==1.23.0, the SDK no longer
+# ships tools itself — importing `openhands.tools` triggers registration of
+# these names via the SDK's register_tool() side effect.
+#
+# The bare name `"task"` is registered but is an *internal* sub-tool of
+# TaskToolSet — its `create(executor, description)` signature does not match
+# the Agent's `tool.create(conv_state=...)` contract, so it crashes at runtime
+# if listed directly. Use `"task_tool_set"` instead to get the conv-state-aware
+# wrapper that yields the task tools.
+ALLOWED_TOOL_NAMES: set[str] = {
+    "terminal",
+    "file_editor",
+    "task_tracker",
+    "task_tool_set",
+}
 
 
 def get_allowed_tools(names: list[str] | None = None) -> list[Any]:
@@ -52,6 +66,15 @@ def get_allowed_tools(names: list[str] | None = None) -> list[Any]:
     # Lazy SDK import — only executed when the adapter actually runs under uv.
     try:
         from openhands.sdk import Tool  # noqa: PLC0415
+
+        # Importing openhands.tools triggers register_tool() side effects for
+        # the five names above. The mock SDK (tests/_mock_openhands_sdk/sdk.py)
+        # does its own registration and ignores this import (no openhands.tools
+        # module exists in mock mode).
+        try:
+            import openhands.tools  # noqa: F401, PLC0415
+        except ImportError:
+            pass
     except ImportError as exc:
         raise ProviderRuntimeError(
             code="sdk_error",
