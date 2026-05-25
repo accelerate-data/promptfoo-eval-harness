@@ -38,6 +38,21 @@ import traceback
 from typing import Any
 
 # ---------------------------------------------------------------------------
+# Stdout isolation — must happen before ANY third-party import.
+#
+# The IPC contract requires stdout to carry *only* NDJSON frames written via
+# _emit(). Third-party libraries (openhands-sdk's rich-based renderer in
+# particular) can call print()/sys.stdout.write() during agent/conversation
+# construction and corrupt the channel. We defend against this by:
+#   1) Capturing the real stdout in _REAL_STDOUT before anything else runs.
+#   2) Pointing sys.stdout at sys.stderr so any library output is routed to
+#      stderr (which the bridge collects in a bounded buffer for diagnostics).
+#   3) Routing _emit() through _REAL_STDOUT directly.
+# ---------------------------------------------------------------------------
+_REAL_STDOUT = sys.stdout
+sys.stdout = sys.stderr
+
+# ---------------------------------------------------------------------------
 # Banner suppression — must happen before any SDK import at module level.
 # ---------------------------------------------------------------------------
 os.environ.setdefault("OPENHANDS_SUPPRESS_BANNER", "1")
@@ -141,9 +156,14 @@ def _load_provider(kind: str) -> Any:
 
 
 def _emit(obj: dict[str, Any]) -> None:
-    """Write a single NDJSON line to stdout and flush immediately."""
-    sys.stdout.write(json.dumps(obj) + "\n")
-    sys.stdout.flush()
+    """Write a single NDJSON line to the *real* stdout and flush immediately.
+
+    sys.stdout has been redirected to stderr at module import time (see top of
+    file) so library output cannot corrupt the IPC channel. Only this function
+    writes to the real stdout.
+    """
+    _REAL_STDOUT.write(json.dumps(obj) + "\n")
+    _REAL_STDOUT.flush()
 
 
 def _error_dict(exc: Exception) -> dict[str, Any]:
