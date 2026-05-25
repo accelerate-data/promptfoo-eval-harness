@@ -652,7 +652,15 @@ class HarnessBridgeProvider {
     };
 
     try {
-      child = _getSpawn()(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'], env });
+      // cwd: framework root (two dirs up from this file). Required so that
+      // `python -m scripts.framework.providers._python_adapter` in the spawn
+      // argv can resolve the module — consumers run the bridge from their own
+      // tests/evals/ cwd, where `scripts.framework` does not exist.
+      child = _getSpawn()(cmd, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env,
+        cwd: path.resolve(__dirname, '..', '..'),
+      });
 
       // Collect stderr (capped at 64KB, spec §2.4)
       let stderrBuf = '';
