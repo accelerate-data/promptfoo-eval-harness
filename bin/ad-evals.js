@@ -618,9 +618,12 @@ function run(
   // provider it loads) hits the local daemon, and tear it down in `finally`.
   // `runPromptfoo` inherits `process.env` — there is no env-arg surface to
   // thread the URL through, so we mutate-and-restore here.
+  // `discoverConfigs` returns paths relative to `paths.evalRoot`; `_readEvalTierFromConfig`
+  // reads files relative to the current `process.cwd`. Resolve discovered paths against
+  // `paths.evalRoot` here so the tier lookup works regardless of where the CLI was launched.
   const configsForDaemonCheck = command === 'run'
     ? (rest[0] ? [path.resolve(rest[0])] : [])
-    : discoveredConfigs;
+    : discoveredConfigs.map((c) => path.resolve(paths.evalRoot, c));
   if (_configsUseAgentServer(configsForDaemonCheck, normalisedTierConfig)) {
     const harnessRoot = path.resolve(__dirname, '..');
     return (async () => {

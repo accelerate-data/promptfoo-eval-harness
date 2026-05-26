@@ -11,7 +11,7 @@ const {
   _tierUsesAgentServer,
   _readEvalTierFromConfig,
   _configsUseAgentServer,
-} = require('./ad-evals');
+} = require('../bin/ad-evals');
 
 const NORMALISED_FIXTURE = {
   defaults: { tier: 'light' },
@@ -116,6 +116,55 @@ describe('_configsUseAgentServer — T14 unit helper', () => {
     assert.equal(_configsUseAgentServer([], NORMALISED_FIXTURE), false);
     assert.equal(_configsUseAgentServer(['/whatever.json'], null), false);
   });
+
+  test(
+    'CALL-SITE INVARIANT: eval-root-relative configs must be resolved before this helper',
+    () => {
+      // Regression guard for the codex review 2026-05-26 finding (P2):
+      // `discoverPackageConfigs` returns paths relative to `paths.evalRoot`.
+      // `_readEvalTierFromConfig` uses `fs.readFileSync(configPath)` which is
+      // cwd-relative. If the call site in bin/ad-evals.js stops resolving
+      // those paths against `paths.evalRoot`, every config from a foreign cwd
+      // looks "missing", silently falls back to `defaults.tier`, and the
+      // daemon is started/not started based on the wrong tier.
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'evalroot-'));
+      try {
+        const rel = path.join('packages', 'a', 'promptfooconfig.json');
+        const abs = path.join(root, rel);
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, JSON.stringify({ metadata: { eval_tier: 'light' } }));
+        // Use a fixture whose default tier does NOT use agent-server, so the
+        // missing-file fallback would give a different answer than the
+        // resolved-file path.
+        const fixtureDefaultsNonAgent = {
+          defaults: { tier: 'standard' },
+          tiers: NORMALISED_FIXTURE.tiers,
+        };
+        const cwdSaved = process.cwd();
+        process.chdir(os.tmpdir());
+        try {
+          // Bug shape: relative path from a foreign cwd → file unreadable →
+          // helper falls back to defaults.tier (standard, no agent-server).
+          assert.equal(
+            _configsUseAgentServer([rel], fixtureDefaultsNonAgent),
+            false,
+            'relative path from foreign cwd must not magically read the config',
+          );
+          // Fix shape: caller resolves the path against evalRoot first →
+          // helper reads the file and sees the agent-server tier.
+          assert.equal(
+            _configsUseAgentServer([path.resolve(root, rel)], fixtureDefaultsNonAgent),
+            true,
+            'eval-root-resolved path lets the helper see the actual eval_tier',
+          );
+        } finally {
+          process.chdir(cwdSaved);
+        }
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe('bin/ad-evals smoke — T15 gated E2E', () => {
