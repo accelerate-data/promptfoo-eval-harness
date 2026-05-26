@@ -5,6 +5,14 @@ Adapter file. `AGENTS.md` is canonical. Below: only Claude-specific guidance tha
 
 ## Claude Code notes
 
+- **Two contexts.** If you (Claude) are working in a **consumer repo**
+  where this harness is already installed under `tests/evals/`, your
+  authoritative LLM-onboarding doc is `tests/evals/AGENTS.md` (scaffolded
+  from `templates/AGENTS.md` in this repo). Read it top-to-bottom before
+  running anything — it covers first-time setup, provider selection,
+  package authoring, diagnosing, and the gotchas list. The notes below
+  apply when you're working **inside this harness repo itself** (e.g.
+  fixing a framework bug, bumping an SDK pin, updating contract tests).
 - **Allow list.** Add `Bash(npx *)` to `~/.claude/settings.json` → `permissions.allow` before running the bootstrap (`npx --package @accelerate-data/promptfoo-eval-harness eval-harness-init`); without it, the bootstrap command is silently blocked.
 - **Claude as eval target.** Use `provider_kind=claude_agent_sdk` in `config/eval-tiers.toml`. The Agent tool / subagents you spawn from a Claude Code session run on your session's model — they are NOT the eval target and will not exercise the harness's pinned SDK.
 - **Running evals from a Claude Code session.** Invoke `npm run eval:smoke` / `npm run eval:regression` via Bash. Exit code 100 means "harness OK, assertion failed" — do not treat it as a tool error.

@@ -339,15 +339,24 @@ delegate to the underlying transport.
 - Defense-in-depth redactor — Node `scripts/framework/secret_redactor.js`
   and its Python parity twin
   `scripts/framework/providers/_secret_redactor.py` — applies the regex
-  patterns in `config/redaction-patterns.json` to error messages and
-  NDJSON events before they reach Promptfoo output or CI logs. Current
-  pattern set: Anthropic keys (`sk-ant-…`), OpenAI keys (`sk-…`),
-  OpenHands keys (`oh-…`), AWS access key IDs (`AKIA…`) and high-entropy
-  AWS secret access keys, GitHub PATs (`gh[pousr]_…`), `Bearer …`
-  tokens, and GCP service-account `private_key` JSON snippets.
-  Format-driven, not env-var-driven — values that don't match these
-  shapes pass through.
-- `tests/evals/.env` is git-ignored by the bootstrap CLI; verify before
+  patterns in `config/redaction-patterns.json` to the **normalized
+  error messages** the bridge emits (`scripts/framework/_node_bridge.js`
+  → `normalizeErr()`). Pattern set: Anthropic keys (`sk-ant-…`), OpenAI
+  keys (`sk-…`), OpenHands keys (`oh-…`), AWS access key IDs (`AKIA…`)
+  and high-entropy AWS secret access keys, GitHub PATs (`gh[pousr]_…`),
+  `Bearer …` tokens, and GCP service-account `private_key` JSON
+  snippets. Format-driven, not env-var-driven — values that don't match
+  these shapes pass through.
+- **Scope limit:** the redactor covers error messages only. Provider
+  transcripts, tool I/O, and other metadata fields written to Promptfoo
+  JSON/viewer output are **not** redacted. Audit the
+  `tests/evals/.tmp/results.json` or viewer output before pasting into
+  a ticket / public chat.
+- `tests/evals/.env` is **not** git-ignored by `eval-harness-init`;
+  the bootstrap only adds `tests/evals/.tmp/` to the repo `.gitignore`
+  and `.cache/`, `.tmp/`, `output/`, `results/`, `node_modules/` to
+  `tests/evals/.gitignore`. Add `.env` (and any other secret files) to
+  `.gitignore` yourself and verify with `git check-ignore` before
   committing.
 - **Gotcha:** if your shell already has `OPENHANDS_BASE_URL` exported
   (e.g. you sourced a consumer `.env` that pointed at an OpenHands

@@ -30,11 +30,13 @@ Shared Promptfoo + OpenCode eval harness. Owns model/tier policy, provider wirin
 
 Detailed walkthrough lives in `docs/setup.md`. Quickstart:
 
-1. `npx --package @accelerate-data/promptfoo-eval-harness eval-harness-init` — scaffolds `tests/evals/` with `package.json`, `opencode.json`, `config/eval-tiers.toml`, and `packages/harness-smoke/`.
+1. `npx --package @accelerate-data/promptfoo-eval-harness eval-harness-init` — scaffolds `tests/evals/` with `package.json`, `opencode.json`, `config/eval-tiers.toml`, `packages/harness-smoke/`, and a copy of `templates/AGENTS.md` as `tests/evals/AGENTS.md` (the LLM-facing onboarding doc for teammates).
 2. `cd tests/evals && npm test && npm run doctor && npm run eval:harness-smoke` — all three must pass before adding packages.
 3. Add packages under `tests/evals/packages/<name>/promptfooconfig.{json,yaml}`. Each package MUST set `metadata.eval_tier` (`light|standard|high|x_high`) and contain exactly one `[smoke]`-prefixed test. Do NOT declare a `providers` block — the framework injects it from `config/eval-tiers.toml`.
 
 Prereqs: Node ≥ 20 (SDK providers require it), `opencode --version` resolves if you use `opencode_cli`, `uv` on PATH if you use the Python subprocess providers, Claude Code allows `Bash(npx *)` (see `CLAUDE.md`).
+
+**For teammates onboarding with an LLM (Claude Code, opencode, codex CLI, …):** point the LLM at the scaffolded `tests/evals/AGENTS.md` (canonical source: [`templates/AGENTS.md`](./templates/AGENTS.md)). It is ordered top-to-bottom for an LLM-runnable workflow — first-time setup, picking a `provider_kind`, writing a package, running, diagnosing, and the gotchas list that catches the operational pitfalls we've hit in practice (`OPENHANDS_BASE_URL` leak, darwin lockfile drift, `openhands_sdk` + small-model tool calls, etc.).
 
 ## Providers
 
@@ -88,7 +90,7 @@ Run from the consumer repo's `tests/evals/` directory:
 
 Per-case lifecycle for SDK providers (`opencode_sdk`, `codex_sdk`): every call goes through `init → turn[*] → finalize → shutdown`. `init()` boots a fresh ephemeral server on a dynamic port; `shutdown()` closes it within 5 s. There is no long-lived daemon and no port pinning — verified end-to-end against both the mock and the real SDKs.
 
-Secrets stay in the consumer repo's local `.env` (loaded by `dotenv`); the framework never bundles or ships keys.
+Secrets must be present in `process.env` before invocation — the harness has no dotenv loader. Consumers typically keep keys in `tests/evals/.env`, add that path to `.gitignore` themselves (the bootstrap does not), and source it from their shell rc or CI step before running. The framework never bundles or ships keys.
 
 ## Rules for New Code
 
