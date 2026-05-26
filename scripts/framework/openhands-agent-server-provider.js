@@ -90,25 +90,30 @@ function defaultHttpClient() {
 function defaultWsClient() {
   let WebSocket;
   return {
+    // Returns { events, close }. Callers MUST invoke close() in a finally
+    // block after iterating `events`; without it, the underlying socket
+    // stays open after a terminal event (execution_status=finished) and
+    // keeps the Node event loop alive until the server closes the
+    // connection or an outer timeout fires.
     connect(url) {
       if (!WebSocket) WebSocket = require('ws');
       const sock = new WebSocket(url);
-      return (async function* events() {
-        const queue = [];
-        let waiter = null;
-        let closed = false;
-        sock.on('message', (data) => {
-          let parsed;
-          try { parsed = JSON.parse(data.toString('utf8')); }
-          catch { parsed = { kind: 'raw', text: data.toString('utf8') }; }
-          if (waiter) { const w = waiter; waiter = null; w(parsed); }
-          else queue.push(parsed);
-        });
-        sock.on('close', () => { closed = true; if (waiter) { const w = waiter; waiter = null; w(null); } });
-        sock.on('error', () => {
-          closed = true;
-          if (waiter) { const w = waiter; waiter = null; w(null); }
-        });
+      const queue = [];
+      let waiter = null;
+      let closed = false;
+      sock.on('message', (data) => {
+        let parsed;
+        try { parsed = JSON.parse(data.toString('utf8')); }
+        catch { parsed = { kind: 'raw', text: data.toString('utf8') }; }
+        if (waiter) { const w = waiter; waiter = null; w(parsed); }
+        else queue.push(parsed);
+      });
+      sock.on('close', () => { closed = true; if (waiter) { const w = waiter; waiter = null; w(null); } });
+      sock.on('error', () => {
+        closed = true;
+        if (waiter) { const w = waiter; waiter = null; w(null); }
+      });
+      const events = (async function* events() {
         while (true) {
           if (queue.length) {
             const ev = queue.shift();
@@ -123,6 +128,12 @@ function defaultWsClient() {
           if (next.kind === 'result') return;
         }
       })();
+      const close = () => {
+        if (closed) return;
+        try { sock.close(); } catch { /* ignore */ }
+        try { sock.terminate(); } catch { /* ignore */ }
+      };
+      return { events, close };
     },
   };
 }
@@ -327,7 +338,16 @@ class OpenhandsAgentServerProvider {
     }
 
     const wsUrl = `${cfg.openhands_server_url.replace(/^http/, 'ws')}/sockets/events/${conversationId}`;
-    const events = this.wsClient.connect(wsUrl);
+    const wsHandle = this.wsClient.connect(wsUrl);
+    // Back-compat: a wsClient stub that still returns a bare async iterable
+    // (older tests / external embedders) is wrapped into the new shape so we
+    // can call close() unconditionally below.
+    const events = (wsHandle && typeof wsHandle[Symbol.asyncIterator] === 'function')
+      ? wsHandle
+      : wsHandle.events;
+    const closeWs = (wsHandle && typeof wsHandle.close === 'function')
+      ? () => wsHandle.close()
+      : () => {};
     const textParts = [];
     const trajectory = [];
     let terminalError = null;
@@ -369,6 +389,10 @@ class OpenhandsAgentServerProvider {
         }
       }
     } finally {
+      // Close the WS unconditionally — without this the live socket can keep
+      // the Promptfoo Node process alive past the eval's result and stall
+      // until the outer timeout fires.
+      closeWs();
       fs.mkdirSync(runDir, { recursive: true });
       fs.writeFileSync(
         path.join(runDir, 'trajectory.json'),

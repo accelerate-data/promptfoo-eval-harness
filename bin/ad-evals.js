@@ -136,21 +136,80 @@ function runTierConfigValidation(evalRoot, logger) {
 }
 
 /**
- * Returns true iff the normalised tier config declares at least one provider
- * with `provider_kind === 'openhands_agent_server'`. Used to decide whether
- * `run()` must spin up the agent-server daemon before invoking promptfoo.
+ * Returns true iff the given tier (by name in normalised.tiers) declares a
+ * provider with `provider_kind === 'openhands_agent_server'`.
  *
- * Safe against `null` (no tier config file) — returns false.
+ * @param {object|null} normalised
+ * @param {string|null|undefined} tierName
+ * @returns {boolean}
+ */
+function _tierUsesAgentServer(normalised, tierName) {
+  if (!normalised || !normalised.tiers || !tierName) return false;
+  const tier = normalised.tiers[tierName];
+  if (!tier || !Array.isArray(tier.providers)) return false;
+  return tier.providers.some((p) => p && p.provider_kind === 'openhands_agent_server');
+}
+
+/**
+ * Best-effort read of a promptfoo config file's `metadata.eval_tier`.
  *
+ * Supports JSON, YAML, and YML. Returns `null` when the file is missing,
+ * unparseable, or has no `metadata.eval_tier` (treated as "uses the default
+ * tier"). Callers decide whether to fall back to the default tier name.
+ *
+ * @param {string} configPath
+ * @returns {string|null}
+ */
+function _readEvalTierFromConfig(configPath) {
+  if (!configPath) return null;
+  let raw;
+  try {
+    raw = fs.readFileSync(configPath, 'utf8');
+  } catch {
+    return null;
+  }
+  let parsed;
+  try {
+    if (configPath.endsWith('.json')) {
+      parsed = JSON.parse(raw);
+    } else if (configPath.endsWith('.yaml') || configPath.endsWith('.yml')) {
+      const yaml = require('js-yaml');
+      parsed = yaml.load(raw);
+    } else {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  const tier = parsed && parsed.metadata && parsed.metadata.eval_tier;
+  return (typeof tier === 'string' && tier.trim() !== '') ? tier.trim() : null;
+}
+
+/**
+ * Returns true iff at least one of the supplied promptfoo config files
+ * resolves to a tier whose providers include `openhands_agent_server`.
+ *
+ * A config with no `metadata.eval_tier` falls back to the harness default
+ * tier name (`normalised.defaults?.tier`) if one is set; otherwise that
+ * config is treated as "tier unknown" and does NOT contribute to the
+ * decision (other configs in the run can still trigger the daemon).
+ *
+ * Safe against `null` normalised (no tier config) — returns false.
+ *
+ * @param {string[]} configPaths
  * @param {object|null} normalised
  * @returns {boolean}
  */
-function _anyTierUsesAgentServer(normalised) {
-  if (!normalised || !normalised.tiers) return false;
-  return Object.values(normalised.tiers).some((tier) =>
-    Array.isArray(tier && tier.providers) &&
-    tier.providers.some((p) => p && p.provider_kind === 'openhands_agent_server'),
-  );
+function _configsUseAgentServer(configPaths, normalised) {
+  if (!normalised || !Array.isArray(configPaths) || configPaths.length === 0) return false;
+  const defaultTier = normalised.defaults && typeof normalised.defaults.tier === 'string'
+    ? normalised.defaults.tier
+    : null;
+  for (const cp of configPaths) {
+    const tierName = _readEvalTierFromConfig(cp) || defaultTier;
+    if (_tierUsesAgentServer(normalised, tierName)) return true;
+  }
+  return false;
 }
 
 function buildPromptfooArgs({ command, rest = [], packageConfigs = [] }) {
@@ -541,18 +600,28 @@ function run(
     normalisedTierConfig = validation.normalised;
   }
 
+  const discoveredConfigs = discoverConfigs(paths.evalRoot);
   const promptfooArgs = buildPromptfooArgs({
     command,
     rest,
-    packageConfigs: discoverConfigs(paths.evalRoot),
+    packageConfigs: discoveredConfigs,
   });
 
-  // Agent-server daemon lifecycle: spin up only when a tier declares the new
-  // provider kind, inject `OPENHANDS_SERVER_URL` so the promptfoo subprocess
-  // (and the JS provider it loads) hits the local daemon, and tear it down in
-  // `finally`. `runPromptfoo` inherits `process.env` — there is no env-arg
-  // surface to thread the URL through, so we mutate-and-restore here.
-  if (_anyTierUsesAgentServer(normalisedTierConfig)) {
+  // Agent-server daemon lifecycle: spin up only when at least one of the
+  // configs about to be passed to promptfoo resolves to a tier that declares
+  // `provider_kind = "openhands_agent_server"`. Checking the WHOLE tier file
+  // would over-spawn in mixed-provider repos — e.g. `ad-evals run
+  // packages/my-opencode-config` would still boot a uvx daemon just because
+  // a different tier in eval-tiers.toml happens to use the new kind.
+  //
+  // Inject `OPENHANDS_SERVER_URL` so the promptfoo subprocess (and the JS
+  // provider it loads) hits the local daemon, and tear it down in `finally`.
+  // `runPromptfoo` inherits `process.env` — there is no env-arg surface to
+  // thread the URL through, so we mutate-and-restore here.
+  const configsForDaemonCheck = command === 'run'
+    ? (rest[0] ? [path.resolve(rest[0])] : [])
+    : discoveredConfigs;
+  if (_configsUseAgentServer(configsForDaemonCheck, normalisedTierConfig)) {
     const harnessRoot = path.resolve(__dirname, '..');
     return (async () => {
       const {
@@ -636,5 +705,7 @@ module.exports = {
   runDoctorInstallProviders,
   runDirScenarios,
   // exported for tests
-  _anyTierUsesAgentServer,
+  _tierUsesAgentServer,
+  _readEvalTierFromConfig,
+  _configsUseAgentServer,
 };

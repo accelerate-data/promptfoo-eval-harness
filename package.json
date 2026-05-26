@@ -25,7 +25,7 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node --test scripts/*.test.js scripts/framework/*.test.js scripts/framework/providers/**/*.test.js scripts/framework/providers/**/*.test.mjs",
+    "test": "node --test bin/*.test.js scripts/*.test.js scripts/framework/*.test.js scripts/framework/providers/**/*.test.js scripts/framework/providers/**/*.test.mjs",
     "lint:md": "markdownlint '**/*.md' --ignore-path .markdownlintignore",
     "bench:spawn-cost": "node bench/spawn-cost.js",
     "bench:throughput": "node bench/parallel-throughput/driver.js",
