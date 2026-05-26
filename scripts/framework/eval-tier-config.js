@@ -439,6 +439,10 @@ function isPlainObject(value) {
 module.exports = {
   CONFIG_PATH,
   REQUIRED_TIERS,
+  ALLOWED_RUNTIME_FIELDS,
+  REQUIRED_RUNTIME_FIELDS,
+  OPTIONAL_RUNTIME_FIELDS,
+  ALLOWED_TIER_FIELDS,
   loadEvalTierConfig,
   resolveEvalTier,
   parseTierConfig,
