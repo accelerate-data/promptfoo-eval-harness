@@ -204,7 +204,7 @@ passes through verbatim, and only `OPENHANDS_API_KEY` is consulted. The legacy m
 The harness ships three plugin-glue wrappers (`framework://codex-sdk-provider.js`,
 `framework://claude-agent-sdk-provider.js`, `framework://opencode-cli-plugin-provider.js`)
 that read additional optional fields from the `[runtime]` block of
-`config/eval-tiers.toml`. All 14 are optional — omitting a field falls
+`config/eval-tiers.toml`. All 15 are optional — omitting a field falls
 back to the wrapper's default. Consumer YAML never sets these directly;
 they always flow through the tier config and the validated allowlist.
 
@@ -213,23 +213,414 @@ they always flow through the tier config and the validated allowlist.
 | `bootstrap_prompt` | string | `""` (no prefix) | codex-sdk, claude-agent-sdk-node, opencode-cli-plugin | Prompt prefix injected before each turn (e.g. plugin-runtime instructions). |
 | `agent_id` | string | `null` | all three wrappers | Plugin agent identifier surfaced in `.eval-run/provider.json` and labels. |
 | `agent_entrypoint_file` | string | `null` | all three wrappers | Relative path to the agent definition file; emitted in run metadata. |
-| `auto_reply_text` | string | `"continue"` | claude-agent-sdk-node | Reply auto-sent when the Claude SDK emits an `AskUserQuestion` tool call. |
-| `max_auto_replies` | integer ≥ 0 | `3` | claude-agent-sdk-node | Cap on consecutive auto-replies before the wrapper bails. |
+| `auto_reply_text` | string | Multi-line approval/safety prompt (see `claude-agent-sdk-provider.js → DEFAULT_AUTO_REPLY_TEXT`) | claude-agent-sdk-node | Reply auto-sent when the Claude SDK emits an `AskUserQuestion` tool call. Most consumers override this to something short like `"continue"`. |
+| `max_auto_replies` | integer ≥ 0 | `5` | claude-agent-sdk-node | Cap on consecutive auto-replies before the wrapper bails. |
 | `idle_turn_stop` | integer ≥ 0 | `2` | claude-agent-sdk-node | Empty-output turns tolerated before the wrapper stops streaming input. |
 | `plugin_subdirs` | string[] (non-empty) | `[]` | claude-agent-sdk-node | Plugin discovery roots resolved relative to the eval root. |
 | `model` | non-empty string | `null` | codex-sdk, claude-agent-sdk-node | Per-tier model override forwarded to the SDK constructor. |
 | `empty_output_retries` | integer ≥ 0 | `0` | claude-agent-sdk-node, opencode-cli-plugin | Extra retry attempts when the agent emits an empty turn output. |
 | `opencode_runner_command` | string | `opencode` (or `$OPENCODE_RUNNER_COMMAND`) | opencode-cli-plugin | Override for the OpenCode CLI binary, e.g. `npx opencode`. |
 | `opencode_plugin_link_path` | string | `null` | opencode-cli-plugin | Workspace-relative plugin symlink path; presence is reported in metadata as `plugin_runtime_loaded`. |
-| `capture_on_failure` | boolean | `true` | opencode-cli-plugin | When true, switches to `runOpenCodeCaptureAll` so stdout/stderr are surfaced on failure. |
-| `write_run_metadata` | boolean | `true` | opencode-cli-plugin | When true, writes `<workspace>/.eval-run/provider.json` with transport + plugin context. |
-| `load_local_env` | boolean | `false` | opencode-cli-plugin | When true, loads `EVAL_ROOT/.env` without overwriting pre-existing `process.env` keys. |
+| `capture_on_failure` | boolean | `false` | opencode-cli-plugin | When true, switches to `runOpenCodeCaptureAll` so stdout/stderr are surfaced on failure. |
+| `write_run_metadata` | boolean | `false` | opencode-cli-plugin | When true, writes `<workspace>/.eval-run/provider.json` with transport + plugin context. |
+| `load_local_env` | boolean | `false` | opencode-cli-plugin | When true, loads the repo-root `.env` (`EVAL_ROOT/../../.env`) first, then `EVAL_ROOT/.env`; neither call overwrites pre-existing `process.env` keys. |
 | `opencode_parser_module` | string (require-path) | `null` (identity parser) | opencode-cli-plugin | Path (relative to `EVAL_ROOT`) of a parser module exporting either a default function or `{ parseOpenCodeJsonStream }`. |
 
 Adding a new optional field requires extending `OPTIONAL_RUNTIME_FIELDS`
 in `scripts/framework/eval-tier-config.js` first; the
 `runtime-fields-allowlist.test.js` guard rejects any wrapper that reads
 a field outside the allowlist.
+
+### Scenarios
+
+The harness ships reference scenarios under
+`tests/harness-scenarios/packages/`; consumers add their own under
+`tests/evals/packages/`. Both run through the same CLI.
+
+#### Harness-shipped scenarios
+
+These cover the framework contract and ship inside the npm package. Run
+them to verify a fresh install or debug a provider regression without
+touching live keys. All run nightly on `main`.
+
+| Scenario | `provider_kind` | Requires live key | Purpose |
+| --- | --- | --- | --- |
+| `minimal-smoke` | `opencode_cli` | No (`OPENCODE_MOCK_MODE=1`) | Single-turn smoke that exercises the bridge end-to-end. |
+| `opencode-cli-compatibility` | `opencode_cli` | No | Layer-4 regression. Locks the five §7.4 OpenCode CLI provider behaviors across releases (3 cases). |
+| `openhands-mock-multi-turn` | `openhands_sdk` | No (mock SDK via `PYTHONPATH` shim) | 3-turn conversation through the Python IPC bridge. |
+| `claude-mock-multi-turn` | `claude_agent_sdk` | No (mock SDK) | Multi-turn through the Python `claude_agent_sdk` kind with deterministic mock responses. |
+| `codex-sdk-mock-multi-turn` | `codex_sdk` | No (mock SDK) | Multi-turn through the in-proc `codex_sdk` kind. |
+| `opencode-sdk-mock-multi-turn` | `opencode_sdk` | No (mock SDK) | Multi-turn through the in-proc `opencode_sdk` kind (ephemeral server). |
+
+Run one locally (mock-mode example):
+
+```bash
+PYTHONPATH="$PWD/tests/_mock_openhands_sdk" \
+  npx ad-evals run tests/harness-scenarios/packages/openhands-mock-multi-turn
+```
+
+#### Authoring a consumer package
+
+Each consumer package is one directory under `tests/evals/packages/<name>/`:
+
+- `promptfooconfig.json` (or `.yaml`) — the eval definition
+- `prompt.txt` or `prompts/*.txt` — prompt template(s)
+- Optional `setup.sh` — runs once per test inside the isolated workspace
+- Optional `fixtures/` referenced via `vars.fixture_path`
+- Optional `README.md` — explains intent and prerequisites
+
+Stateful evals (anything that writes files, runs `git`, exercises a sandbox)
+lean on the `beforeEach` extension hook documented below in
+[Workspace Isolation & Git Operations](#workspace-isolation--git-operations).
+Read-only contract evals (no fixture, no setup) skip the hook and run as
+plain Promptfoo tests.
+
+### Provider Key Matrix
+
+Each `provider_kind` registered in `KIND_REGISTRY`
+(`scripts/framework/_node_bridge.js`) reads its own env vars. The
+harness never embeds keys; consumers export them in the shell before
+running or opt into a runner-managed `.env` (see the
+`opencode-cli-plugin` wrapper's `load_local_env` field below).
+
+| `provider_kind` | Auth source | Optional env | Notes |
+| --- | --- | --- | --- |
+| `opencode_cli` | Inherits the calling shell's environment — auth is delegated to OpenCode's own config (`opencode.json`, `OPENCODE_CONFIG`, or the OpenCode provider table). | `OPENCODE_CONFIG`, `XDG_STATE_HOME` (the base provider sets these per run; spread `process.env` otherwise). | Base provider does **not** read `.env`. Consumers who want `.env` auto-load layer it via the `opencode-cli-plugin` wrapper with `load_local_env = true`. The OpenCode binary must be on `PATH` (override via the plugin wrapper's `opencode_runner_command`). |
+| `claude_agent_sdk` | `ANTHROPIC_API_KEY` | — | Python kind via `uv run --with claude-agent-sdk==…`. Async lifecycle; stateful `ClaudeSDKClient` for multi-turn. |
+| `codex_sdk` | Codex CLI login state (`~/.codex/auth.json`) | `OPENAI_API_KEY` (gateway fallback) | Prefers existing Codex CLI login; falls back to API key. Bridge reserves a per-session HOME and a per-case `git init`-ed workspace before invoking `Codex.startThread`. |
+| `openhands_sdk` | `OPENHANDS_API_KEY` *or* prefix-routed `_API_KEY` | `OPENHANDS_BASE_URL`, `OPENHANDS_MODEL_OVERRIDE` | Gateway mode (`base_url` set): only `OPENHANDS_API_KEY` is consulted. Legacy mode routes by model prefix (`openai/…` → `OPENAI_API_KEY`, etc.). |
+| `opencode_sdk` | `OPENCODE_API_KEY` | — | TypeScript SDK; boots an ephemeral `127.0.0.1:0` OpenCode server per run. Agents limited to `{build, plan, general}`. |
+
+Plugin glue providers wrap one of the kinds above and add a few extra
+hooks. They are not separate `provider_kind` values — they are
+referenced from tier scenarios via the `framework://` URL scheme and
+delegate to the underlying transport.
+
+| Wrapper (`framework://`) | Wraps | Adds |
+| --- | --- | --- |
+| `opencode-cli-plugin-provider.js` | `opencode_cli` | Opt-in `load_local_env` (reads the repo-root `.env` at `EVAL_ROOT/../../.env` first, then `EVAL_ROOT/.env`; neither overwrites `process.env`); `opencode_runner_command`; plugin symlink discovery via `opencode_plugin_link_path`. |
+| `claude-agent-sdk-provider.js` | Node-side `claude_agent_sdk_node` transport (in-proc — **not** a bridge kind) | Streaming input + auto-reply gate. Consumes `ANTHROPIC_API_KEY` from the process environment; probes `CLAUDE_CODE_EXECUTABLE`, `~/.local/bin/claude`, `/usr/local/bin/claude`, `/usr/bin/claude` for the CLI binary. |
+| `codex-sdk-provider.js` | `codex_sdk` (via bridge) | `bootstrap_prompt` injection; workspace precedence from the prompt body. |
+
+#### Secret hygiene
+
+- Defense-in-depth redactor (`scripts/framework/_secret_redactor.js`)
+  strips `*_API_KEY`, `*_TOKEN`, `*_SECRET`, and `sk_*` patterns from
+  error messages and NDJSON events before they reach Promptfoo output or
+  CI logs.
+- `tests/evals/.env` is git-ignored by the bootstrap CLI; verify before
+  committing.
+- **Gotcha:** if your shell already has `OPENHANDS_BASE_URL` exported
+  (e.g. you sourced a consumer `.env` that pointed at an OpenHands
+  gateway), the `openhands_sdk` adapter will route through that gateway
+  and may surface misleading `OpenAIException - Connection error`
+  failures. Clear with `OPENHANDS_BASE_URL=` (empty) prefix when running
+  `openhands_sdk` scenarios that should not use the gateway.
+
+#### Switching providers across runs
+
+Consumers commonly run the same package set against multiple providers.
+Pattern from the data-engineering team: keep `config/eval-tiers.toml`
+pointed at the primary provider (opencode-cli for daily work) and add
+sibling configs (`eval-tiers-sdk.toml`, `eval-tiers-codex.toml`,
+`eval-tiers-openhands.toml`) plus thin bash wrappers that backup → swap
+→ run → restore on exit:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+EVAL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BACKUP="$EVAL_ROOT/.tmp/eval-tiers.$$.bak"
+mkdir -p "$EVAL_ROOT/.tmp"
+cp "$EVAL_ROOT/config/eval-tiers.toml" "$BACKUP"
+trap '[ -f "$BACKUP" ] && cp "$BACKUP" "$EVAL_ROOT/config/eval-tiers.toml" && rm -f "$BACKUP"' EXIT
+cp "$EVAL_ROOT/config/eval-tiers-sdk.toml" "$EVAL_ROOT/config/eval-tiers.toml"
+cd "$EVAL_ROOT" && ad-evals run packages/
+```
+
+The swap happens outside the promptfoo-guard window so the
+artifact-cleanup guard never sees a mid-suite state change.
+
+### Parallelism
+
+Two layers of concurrency, both controlled from the framework.
+
+**Outer concurrency** — across packages. `ad-evals run <dir>` walks the
+directory and runs each `promptfooconfig.*` as a separate Promptfoo
+invocation. A `p-limit` gate caps how many run in parallel.
+
+```bash
+# Default — outer concurrency = os.cpus().length on the host
+ad-evals run packages/
+
+# Force sequential (one config at a time)
+AD_EVALS_OUTER_CONCURRENCY=1 ad-evals run packages/
+
+# Cap at a specific value
+AD_EVALS_OUTER_CONCURRENCY=4 ad-evals run packages/
+```
+
+The benchmark `npm run bench:throughput` enforces ≥ 1.4× speedup at
+concurrency=2 on every PR — a regression below that threshold signals
+the outer limiter is broken or spawns are serializing.
+
+**Inner concurrency** — across test cases inside one package. Promptfoo's
+`--max-concurrency` controls how many `tests[]` entries inside a single
+`promptfooconfig` run in parallel. `ad-evals run` forwards extra args to
+Promptfoo verbatim — pass the flag directly after the config path
+(no `--` separator needed):
+
+```bash
+ad-evals run packages/my-feature/promptfooconfig.json --max-concurrency 8
+```
+
+#### When to use which
+
+| Pattern | Lever |
+| --- | --- |
+| Many packages, few tests per package | Outer (`AD_EVALS_OUTER_CONCURRENCY`) |
+| One package, many `tests[]` entries | Inner (`--max-concurrency`) |
+| Mixed | Combine — outer × inner = total parallel calls; budget against your provider rate limit. |
+
+#### Provider rate-limit considerations
+
+- `openhands_sdk` / `claude_agent_sdk` spawn one Python subprocess per
+  call. Outer concurrency above ~8 risks subprocess-spawn contention.
+- `opencode_cli` spawns one CLI process per call. Same caution.
+- `codex_sdk` / `claude_agent_sdk_node` / `opencode_sdk` are in-process
+  Node clients — concurrency is bounded by the SDK's connection pool
+  and the provider's rate limit, not spawn cost.
+
+### Multi-turn Conversational Evals
+
+The harness exposes one canonical multi-turn shape that works across
+`openhands_sdk`, `claude_agent_sdk`, `codex_sdk`, and `opencode_sdk`. Set
+`vars.turns` to a JSON-encoded array of prompts, then check
+`output.split('\n---\n')` per turn.
+
+Prompt template (`prompts/multi-turn.txt`):
+
+```text
+{{turns}}
+```
+
+Test config:
+
+```json
+{
+  "prompts": ["file://prompts/multi-turn.txt"],
+  "tests": [
+    {
+      "description": "[multi-turn] memory recall — 2 turns",
+      "vars": {
+        "turns": "[\"Please remember 42.\", \"What number was it?\"]"
+      },
+      "assert": [
+        {
+          "type": "javascript",
+          "value": "(() => { const parts = output.split('\\n---\\n'); return parts.length === 2; })()"
+        },
+        {
+          "type": "javascript",
+          "value": "output.split('\\n---\\n')[1].includes('42')"
+        }
+      ]
+    }
+  ]
+}
+```
+
+The bridge decodes `turns`, drives the provider once per entry, and
+joins responses with `\n---\n`. Each turn shares the provider's
+conversation state (Python kinds reuse the same `LocalConversation`;
+Node kinds reuse the same SDK client instance).
+
+#### Auto-reply mode (claude-agent-sdk wrapper only)
+
+When the Claude SDK emits an `AskUserQuestion` mid-turn, the
+`framework://claude-agent-sdk-provider.js` wrapper auto-responds with
+`auto_reply_text`. The default is a multi-line approval/safety prompt
+defined in `claude-agent-sdk-provider.js` (`DEFAULT_AUTO_REPLY_TEXT`)
+that tells the agent to stop and summarize once the original request is
+complete; most consumers override it to something terse like
+`"continue"` once they understand the trade-off. Cap consecutive replies
+with `max_auto_replies` (default `5`) and bail on `idle_turn_stop`
+consecutive empty turns (default `2`). All three live in the `[runtime]`
+block of `eval-tiers.toml`.
+
+#### Pattern selection
+
+| Pattern | Use when |
+| --- | --- |
+| `vars.turns` (JSON array) | You author the conversation up front. Deterministic, replayable. |
+| `auto_reply_text` (claude-agent-sdk wrapper) | The agent asks clarifying questions and you want it driven to completion without scripting each reply. |
+| Promptfoo native multi-step prompts | You need different prompt templates per turn or per-turn variable interpolation. |
+
+### LLM Judge & Custom Assertions
+
+The harness inherits Promptfoo's assertion types — no new types are
+added. The patterns worth knowing are how consumers compose them.
+
+#### LLM-rubric (model-graded)
+
+```json
+{
+  "assert": [
+    {
+      "type": "llm-rubric",
+      "value": "The response correctly identifies the medallion architecture layers (bronze → silver → gold).",
+      "provider": "openai:gpt-4o-mini"
+    }
+  ]
+}
+```
+
+`provider` here is the *grader* — a separate Promptfoo provider from the
+one under evaluation. Set it explicitly when your default Promptfoo
+provider config does not include a grader. Common pattern: use the
+cheapest capable model (e.g. `openai:gpt-4o-mini`) to grade output from
+a more expensive one.
+
+#### JavaScript inline (deterministic checks)
+
+```json
+{
+  "assert": [
+    { "type": "javascript", "value": "output.trim().length > 0" },
+    { "type": "javascript", "value": "JSON.parse(output).status === 'ok'" }
+  ]
+}
+```
+
+#### File-backed assertions (stateful, workspace-aware)
+
+For evals that inspect side effects (files written, tables created, git
+history), reference an external module:
+
+```json
+{
+  "assert": [
+    { "type": "javascript", "value": "file://../../assertions/check-skill-trajectory.js" }
+  ]
+}
+```
+
+The module exports a `(output, context) => { pass, score, reason }`
+function and receives `context.vars.workspace` (set by the `beforeEach`
+hook — see next section). Use this pattern for any check that needs to
+read or hash files the agent created.
+
+#### Composition tips
+
+- Order assertions cheapest first — a length check before an LLM rubric
+  saves money on obvious failures.
+- File-backed assertions can return `{ pass: false, score: 0.3, reason }`
+  for partial credit.
+- Promptfoo aggregates `assert` results per test; the test passes only
+  if every assertion passes (unless `threshold` is set in the config).
+
+### Workspace Isolation & Git Operations
+
+Plugins that perform git operations (`git init`, `git commit`, schema
+migrations, sandboxed DuckDB writes) must run inside a workspace the
+harness owns end-to-end. Two layers handle this.
+
+#### Layer 1 — per-call workspace (built-in)
+
+Each plugin-glue provider resolves its workspace path differently. The
+precedence rules are wrapper-specific:
+
+- **`framework://claude-agent-sdk-provider.js`** —
+  `ctx.vars.workspace` (Promptfoo per-row override) →
+  prompt regex `/(?:Workspace:|operating in workspace)\s*(\S+)/i` →
+  `cfg.project_dir` (joined to `EVAL_ROOT` if relative) → `EVAL_ROOT`
+  itself (final fallback). No `mkdtemp`.
+- **`framework://codex-sdk-provider.js`** — prompt regex →
+  `cfg.project_dir` (joined to `EVAL_ROOT` if relative) → falls through
+  to the `codex_sdk` bridge, which `mkdtemp`s a per-case workspace
+  before calling `Codex.startThread`. The wrapper does **not** read
+  `ctx.vars.workspace`.
+- **`framework://opencode-cli-plugin-provider.js`** — prompt regex →
+  `cfg.project_dir` (joined to `EVAL_ROOT` if relative) → `mkdtemp`
+  fallback under `tests/evals/.workspaces/provider-runs/opencode-*`.
+  The wrapper does **not** read `ctx.vars.workspace`. Note that the
+  fallback prefix (`.workspaces/`) is **outside** the harness
+  artifact-guard allowlist (`.cache/`, `.tmp/`, `output/`, `results/`),
+  so consumers running with the guard enabled should set
+  `cfg.project_dir` (or rely on the `Workspace:` prompt marker) instead
+  of the mkdtemp fallback.
+
+The resolved path is written to `<workspace>/.eval-run/provider.json`
+along with transport and plugin metadata when `write_run_metadata = true`.
+The `opencode-cli-plugin` wrapper defaults this **off** — opt in via the
+`[runtime]` block of `eval-tiers.toml`.
+
+#### Layer 2 — fixture-copy + plugin link (consumer hook)
+
+For stateful evals (the data-engineering plugin's git-ops scenarios are
+the canonical example), consumers add a `beforeEach` extension hook
+that:
+
+1. Reads `test.vars.fixture_path` (relative to `tests/evals/`).
+2. Copies the fixture to
+   `tests/evals/.tmp/workspaces/<timestamp>-<slug>/`. The
+   `tests/evals/.tmp/` prefix is on the harness artifact-guard allowlist
+   (`scripts/framework/run-promptfoo-with-guard.js`), so the post-run
+   cleanup guard never flags it.
+   **Excludes** `.venv`, `venv`, `target`, `dbt_packages`, `.git`,
+   `node_modules`, `__pycache__`, `*.duckdb-wal`, `secrets.toml` — heavy
+   or per-machine artifacts that must not be replicated.
+3. Symlinks the plugin into
+   `<workspace>/.opencode/plugins/<plugin-name>` so OpenCode discovers
+   it without resolving real paths.
+4. Runs `test.vars.setup_script` with `WORKSPACE=<run-dir>` (creates
+   venv, bridges secrets, runs `dbt deps`, etc.).
+5. Records a high-resolution `.run-started-at` timestamp **after** setup
+   completes, so assertions can distinguish files the agent wrote from
+   fixture files (via `find -newer .run-started-at` or `mtime` checks).
+6. Sets `test.vars.workspace` (absolute) and `test.vars.workspace_rel`
+   so prompts and assertions can reference the isolated path.
+
+Wire it in `promptfooconfig.json`:
+
+```json
+{
+  "extensions": ["file://../../hooks.mjs:extensionHook"],
+  "tests": [
+    {
+      "vars": {
+        "fixture_path": "fixtures/duckdb-greenfield",
+        "setup_script": "packages/skill-scaffolding-duckdb-workspace-contract/setup.sh"
+      }
+    }
+  ]
+}
+```
+
+The prompt template uses `{{workspace}}` to point the agent at the
+isolated path; the agent can `git init`, write files, run `dbt` — all
+confined to that directory.
+
+#### Why this is safe for git operations
+
+- The fixture filter excludes `.git`, so each run starts without a git
+  directory. The agent runs `git init` on a clean tree.
+- The workspace lives under `tests/evals/.tmp/workspaces/<...>/`,
+  outside any package source tree, so the agent cannot accidentally
+  mutate the eval suite or the parent repo. The `.tmp/` prefix is on
+  the harness artifact-guard allowlist.
+- The plugin is symlinked, not copied — installing it into the workspace
+  cannot drift from the source of truth.
+- `.run-started-at` lets assertions filter `git log` / `find -newer` to
+  only the agent's commits.
+
+#### Workspace lifecycle
+
+The framework does **not** delete
+`tests/evals/.tmp/workspaces/<...>` automatically — the previous N runs
+stay on disk for post-mortem. Add a GC step
+(`find tests/evals/.tmp/workspaces -maxdepth 1 -mtime +7 -exec rm -rf {} +`)
+to your CI cleanup if disk footprint matters.
 
 ### Common failures
 

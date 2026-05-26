@@ -38,7 +38,7 @@ under VD-2174-12.
     `opencode_plugin_link_path`, `capture_on_failure`,
     `write_run_metadata`, `load_local_env`, `opencode_parser_module`).
     Base provider unchanged.
-- 14 new optional `[runtime]` fields validated by
+- 15 new optional `[runtime]` fields validated by
   `eval-tier-config.js` and exposed via `ALLOWED_RUNTIME_FIELDS`:
   `agent_id`, `agent_entrypoint_file`, `bootstrap_prompt`,
   `auto_reply_text`, `max_auto_replies`, `idle_turn_stop`,
@@ -57,6 +57,21 @@ under VD-2174-12.
     `ALLOWED_RUNTIME_FIELDS` or `ALLOWED_TIER_FIELDS`).
   - Fixtures under `tests/_fixtures/opencode-plugin-parsers/` for both
     parser module shapes plus a negative case.
+- `docs/setup.md` expanded with six new sections aimed at consumers
+  porting evals across repos: Scenarios (harness-shipped table +
+  consumer-package authoring), Provider Key Matrix (env vars per
+  `provider_kind` + tier-swap pattern), Parallelism (outer
+  `AD_EVALS_OUTER_CONCURRENCY` vs inner `--max-concurrency`), Multi-turn
+  Conversational Evals (`vars.turns` JSON-array pattern +
+  `claude_agent_sdk_node` auto-reply gate), LLM Judge & Custom
+  Assertions (llm-rubric + `file://`-backed assertion pattern), and
+  Workspace Isolation & Git Operations (`beforeEach` extension hook
+  with fixture-copy + plugin symlink + setup script + `.run-started-at`
+  timestamp).
+- `README.md` Scenarios table now lists all six harness-shipped
+  scenarios (added `claude-mock-multi-turn`,
+  `codex-sdk-mock-multi-turn`, `opencode-sdk-mock-multi-turn`) and
+  links to the new setup.md sections from the Documentation table.
 
 ### Changed
 
