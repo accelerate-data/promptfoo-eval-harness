@@ -17,6 +17,12 @@ jobs:
         python-version: ['3.12', '3.13']
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Full history required: the v1.5.0 byte-identity contract test
+          # (opencode-cli-plugin-provider.test.js) runs `git diff` against the
+          # phase-04 parent SHA recorded in tests/_fixtures/phase-04-parent.sha.
+          # A shallow clone fails with `fatal: bad object <sha>`.
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: '20'

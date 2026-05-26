@@ -106,7 +106,13 @@ function _probeOnce(httpGet, probeUrl) {
 }
 
 function _sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms).unref?.());
+  // Do NOT unref() — when waitForReady is driven by fake httpGet in tests, the
+  // sleep timer is the only thing keeping the event loop alive between polls.
+  // An unref'd timer lets the loop drain → the timer never fires → Node test
+  // runner aborts with "Promise resolution is still pending". Production
+  // callers keep the loop alive via the spawned child process's stdio pipes,
+  // so a ref'd timer is safe in both contexts.
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
 
 function buildChildEnv(allowlist) {
