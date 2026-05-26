@@ -7,5 +7,6 @@ module.exports = {
   ...require('./resolve-promptfoo-config'),
   makeClaudeAgentSdkProvider: require('./claude-agent-sdk-provider'),
   makeCodexSdkProvider: require('./codex-sdk-provider'),
+  makeOpenCodeCliPluginProvider: require('./opencode-cli-plugin-provider'),
   roots: require('./roots'),
 };
