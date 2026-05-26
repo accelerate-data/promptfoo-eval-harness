@@ -9,6 +9,15 @@
 Step-by-step guide to add `@accelerate-data/promptfoo-eval-harness` to a
 repo. Follow the steps in order. Each step includes a verification command.
 
+> **Testing an unpublished branch?** This guide assumes the harness version
+> you want is already on npm. If you are validating a feature branch
+> (worktree) that has not been published yet, follow
+> [`setup-unpublished.md`](setup-unpublished.md) instead. Steps 1–2 below
+> are replaced by Steps 1–4 of that guide (pick install method, bootstrap
+> from worktree, wire the runtime to the worktree, verify). After those
+> finish, return here at Step 3 — write an eval package — and continue
+> through the rest of this guide.
+
 ---
 
 ## Prerequisites
