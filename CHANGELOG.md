@@ -13,6 +13,70 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Versions follo
 
 ---
 
+## [1.5.0] — TBD
+
+### Summary
+
+Ports the three plugin-glue providers from the `vibedata-data-engineering`
+consumer into the harness so any repo can opt into bootstrap-prompt
+injection, Claude streaming-input + auto-reply, and OpenCode CLI
+plugin metadata by pinning a published harness version. The base
+`scripts/framework/opencode-cli-provider.js` (§7.4 contract) remains
+byte-identical; plugin features live in a new sibling wrapper. Tracked
+under VD-2174-12.
+
+### Added
+
+- Plugin glue providers in `scripts/framework/`:
+  - `codex-sdk-provider.js`: tier → `codex_sdk` bridge wrapper with
+    `bootstrap_prompt` injection and workspace precedence.
+  - `claude-agent-sdk-provider.js`: Node-side streaming-input + auto-reply
+    gate + `qa-log.jsonl` (NEW transport `claude_agent_sdk_node`;
+    coexists with the existing Python `claude_agent_sdk` bridge).
+  - `opencode-cli-plugin-provider.js`: NEW sibling of
+    `opencode-cli-provider.js`. Adds plugin hooks (`bootstrap_prompt`,
+    `opencode_plugin_link_path`, `capture_on_failure`,
+    `write_run_metadata`, `load_local_env`, `opencode_parser_module`).
+    Base provider unchanged.
+- 14 new optional `[runtime]` fields validated by
+  `eval-tier-config.js` and exposed via `ALLOWED_RUNTIME_FIELDS`:
+  `agent_id`, `agent_entrypoint_file`, `bootstrap_prompt`,
+  `auto_reply_text`, `max_auto_replies`, `idle_turn_stop`,
+  `plugin_subdirs`, `opencode_runner_command`,
+  `opencode_plugin_link_path`, `model`, `capture_on_failure`,
+  `write_run_metadata`, `load_local_env`, `opencode_parser_module`,
+  `empty_output_retries`.
+- `scripts/framework/provider-run-metadata.js` utility (`writeProviderRunMetadata`,
+  `writeTrajectory`) for emitting `<workspace>/.eval-run/{provider,trajectory}.json`.
+- Contract tests:
+  - `scripts/framework/opencode-cli-plugin-provider.test.js` (25 tests
+    locking sibling shape, parser dual-shape resolution, plugin-link
+    detection, run-metadata emission, base byte-identity).
+  - `scripts/framework/runtime-fields-allowlist.test.js` (static scan
+    ensures every `cfg.<field>` read in the wrappers is in
+    `ALLOWED_RUNTIME_FIELDS` or `ALLOWED_TIER_FIELDS`).
+  - Fixtures under `tests/_fixtures/opencode-plugin-parsers/` for both
+    parser module shapes plus a negative case.
+
+### Changed
+
+- `scripts/framework/eval-tier-config.js`: now exports
+  `ALLOWED_RUNTIME_FIELDS`, `REQUIRED_RUNTIME_FIELDS`,
+  `OPTIONAL_RUNTIME_FIELDS`, and `ALLOWED_TIER_FIELDS` so the allowlist
+  guard rail has a single source of truth.
+- `scripts/framework/index.js`: re-exports
+  `makeCodexSdkProvider`, `makeClaudeAgentSdkProvider`, and
+  `makeOpenCodeCliPluginProvider` factories.
+
+### Coordinated consumer changes (separate PR after this version publishes)
+
+- Consumer's `tests/evals/scripts/{codex-sdk-provider,claude-agent-sdk-provider,opencode-provider,provider-run-metadata}.js`
+  to be deleted (replaced by harness equivalents).
+- `parse-opencode-json.js` stays in the consumer; wired via the
+  `opencode_parser_module` runtime field.
+
+---
+
 ## [1.0.0] — 2026-05-23
 
 ### Summary
@@ -81,5 +145,6 @@ CLI flag ship alongside.
 
 ---
 
-[Unreleased]: https://github.com/accelerate-data/promptfoo-eval-harness/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/accelerate-data/promptfoo-eval-harness/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/accelerate-data/promptfoo-eval-harness/releases/tag/v1.5.0
 [1.0.0]: https://github.com/accelerate-data/promptfoo-eval-harness/releases/tag/v1.0.0

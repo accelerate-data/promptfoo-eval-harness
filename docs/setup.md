@@ -199,6 +199,38 @@ passes through verbatim, and only `OPENHANDS_API_KEY` is consulted. The legacy m
 (omit `base_url`) still works for repos that resolve via `_MODEL_MAP` and the
 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` prefix routing.
 
+### Plugin Glue Provider Runtime Fields (v1.5.0)
+
+The harness ships three plugin-glue wrappers (`framework://codex-sdk-provider.js`,
+`framework://claude-agent-sdk-provider.js`, `framework://opencode-cli-plugin-provider.js`)
+that read additional optional fields from the `[runtime]` block of
+`config/eval-tiers.toml`. All 14 are optional — omitting a field falls
+back to the wrapper's default. Consumer YAML never sets these directly;
+they always flow through the tier config and the validated allowlist.
+
+| Field | Type | Default | Consumed by | Description |
+| --- | --- | --- | --- | --- |
+| `bootstrap_prompt` | string | `""` (no prefix) | codex-sdk, claude-agent-sdk-node, opencode-cli-plugin | Prompt prefix injected before each turn (e.g. plugin-runtime instructions). |
+| `agent_id` | string | `null` | all three wrappers | Plugin agent identifier surfaced in `.eval-run/provider.json` and labels. |
+| `agent_entrypoint_file` | string | `null` | all three wrappers | Relative path to the agent definition file; emitted in run metadata. |
+| `auto_reply_text` | string | `"continue"` | claude-agent-sdk-node | Reply auto-sent when the Claude SDK emits an `AskUserQuestion` tool call. |
+| `max_auto_replies` | integer ≥ 0 | `3` | claude-agent-sdk-node | Cap on consecutive auto-replies before the wrapper bails. |
+| `idle_turn_stop` | integer ≥ 0 | `2` | claude-agent-sdk-node | Empty-output turns tolerated before the wrapper stops streaming input. |
+| `plugin_subdirs` | string[] (non-empty) | `[]` | claude-agent-sdk-node | Plugin discovery roots resolved relative to the eval root. |
+| `model` | non-empty string | `null` | codex-sdk, claude-agent-sdk-node | Per-tier model override forwarded to the SDK constructor. |
+| `empty_output_retries` | integer ≥ 0 | `0` | claude-agent-sdk-node, opencode-cli-plugin | Extra retry attempts when the agent emits an empty turn output. |
+| `opencode_runner_command` | string | `opencode` (or `$OPENCODE_RUNNER_COMMAND`) | opencode-cli-plugin | Override for the OpenCode CLI binary, e.g. `npx opencode`. |
+| `opencode_plugin_link_path` | string | `null` | opencode-cli-plugin | Workspace-relative plugin symlink path; presence is reported in metadata as `plugin_runtime_loaded`. |
+| `capture_on_failure` | boolean | `true` | opencode-cli-plugin | When true, switches to `runOpenCodeCaptureAll` so stdout/stderr are surfaced on failure. |
+| `write_run_metadata` | boolean | `true` | opencode-cli-plugin | When true, writes `<workspace>/.eval-run/provider.json` with transport + plugin context. |
+| `load_local_env` | boolean | `false` | opencode-cli-plugin | When true, loads `EVAL_ROOT/.env` without overwriting pre-existing `process.env` keys. |
+| `opencode_parser_module` | string (require-path) | `null` (identity parser) | opencode-cli-plugin | Path (relative to `EVAL_ROOT`) of a parser module exporting either a default function or `{ parseOpenCodeJsonStream }`. |
+
+Adding a new optional field requires extending `OPTIONAL_RUNTIME_FIELDS`
+in `scripts/framework/eval-tier-config.js` first; the
+`runtime-fields-allowlist.test.js` guard rejects any wrapper that reads
+a field outside the allowlist.
+
 ### Common failures
 
 | Symptom | Fix |
