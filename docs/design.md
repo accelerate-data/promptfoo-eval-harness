@@ -342,6 +342,79 @@ The wrapper provider (`scripts/framework/openhands-agent-server-provider.js`) sp
 
 Daemon-lifecycle kinds today: `openhands_agent_server`.
 
+## Plugin Glue Providers (v1.5.0, VD-2174-12)
+
+Plugin glue providers are thin `framework://` wrappers that compose
+existing bridge-routed kinds with auto-reply gates, plugin discovery,
+workspace metadata, and parser hooks. They were ported into the harness
+from the `vibedata-data-engineering` consumer so other repos can pin a
+published version instead of vendoring per-repo glue.
+
+### Provider Wrappers vs Bridge
+
+| Choose a wrapper (`framework://*-provider.js`) when… | Choose a bridge `provider_kind` directly when… |
+| --- | --- |
+| The scenario needs plugin-runtime metadata (`provider.json`, trajectory), bootstrap prefix injection, or auto-reply handling. | The scenario is a plain single-turn or multi-turn case with no plugin gluing. |
+| The provider must surface `agent_id` / `agent_entrypoint_file` in run telemetry. | Run telemetry is not required. |
+| A custom parser (`opencode_parser_module`) or capture-on-failure semantics are needed. | Default OpenCode CLI behavior is sufficient. |
+| The Claude SDK call must stream input across multiple turns with `AskUserQuestion` auto-reply. | Single-turn Python bridge dispatch (`uv run`) is enough. |
+
+All wrappers consume the same `[runtime]` allowlist (see
+[setup guide](setup.md#plugin-glue-provider-runtime-fields-v150)).
+
+### Two Claude Agent SDK Transports
+
+The Claude Agent SDK ships in two transports that **coexist** in v1.5.0;
+pick by characteristics, not by name:
+
+| | `claude_agent_sdk` (Python bridge) | `claude_agent_sdk_node` (Node wrapper) |
+| --- | --- | --- |
+| Module | `scripts/framework/providers/claude_agent_sdk/provider.py` via `_python_adapter.py` | `scripts/framework/claude-agent-sdk-provider.js` (in-proc) |
+| Spawn | `uv run --with claude-agent-sdk==0.2.85` (subprocess) | none (in-proc) |
+| Multi-turn | `ClaudeSDKClient` reused across turns inside the Python adapter | streaming-input async generator inside the Node wrapper |
+| `AskUserQuestion` handling | tool gate via `permissions.allow_web=true`; surfaces as `tool_error` if absent | auto-reply with `auto_reply_text` up to `max_auto_replies`; logs to `qa-log.jsonl` |
+| Plugin discovery | not supported | walks `plugin_subdirs` relative to `EVAL_ROOT` |
+| Idle-turn termination | n/a (Python bridge handles its own lifecycle) | configurable via `idle_turn_stop` |
+| Output capture | `transcript_summary` from `finalize()` | per-turn `qa-log.jsonl` plus final `provider.json` |
+| When to choose | single-turn or non-plugin multi-turn cases needing native SDK semantics | scenarios that need bootstrap prompts, auto-replies, plugin manifests, or trajectory emission |
+
+The two transports MAY appear in the same scenario suite — they share no
+state. The `claude_agent_sdk_node` wrapper does NOT go through the
+Promptfoo bridge; it returns a plain `{id, label, callApi}` provider.
+
+### OpenCode CLI: Base + Sibling
+
+`scripts/framework/opencode-cli-provider.js` is the locked §7.4 contract.
+The framework refuses ANY edit — even a `module.exports` re-export — and
+the byte-identity guard
+(`opencode-cli-plugin-provider.test.js` → "base file ... is byte-identical")
+fails if the parent SHA stored in `tests/_fixtures/phase-04-parent.sha`
+no longer matches `HEAD` for that file.
+
+Plugin features live in a **sibling**, not a subclass:
+
+```text
+scripts/framework/
+├── opencode-cli-provider.js          ← BASE, locked, no edits ever
+└── opencode-cli-plugin-provider.js   ← SIBLING (Shape B wrapper factory)
+```
+
+The sibling re-uses the base's `runOpenCode` export and shares the
+`OPENCODE_RUNNER_COMMAND` resolution, but it owns its own:
+
+- `TRANSPORT_NAME = 'opencode_cli_plugin'` for concurrency gating
+- bootstrap-prompt prefix
+- plugin-link detection (`opencode_plugin_link_path`)
+- run metadata (`write_run_metadata` → `.eval-run/provider.json`)
+- parser hook (`opencode_parser_module`) supporting both module shapes
+  (`module.exports = fn` and `module.exports = { parseOpenCodeJsonStream }`)
+- empty-output retry loop (inlined because the base helper is
+  module-local)
+
+A Shape A subclass was rejected during phase-04 (codex round-2,
+finding 3) because the base's `callApi` delegates to a module-local
+`callWithEmptyOutputRetries` helper that `extends` cannot intercept.
+
 ## Open Questions
 
 1. `[extraction]` What package name and versioning policy should the standalone harness use?

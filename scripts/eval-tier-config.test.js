@@ -306,13 +306,13 @@ agent = "eval_x_high"
     const deprecatedRuntimePath = path.join(tempRoot, 'deprecated-runtime.toml');
     fs.writeFileSync(deprecatedRuntimePath, `
 ${validRuntime}
-model = "qwen3.6-plus"
+legacy_unknown_field = "stale"
 ${validTiers}
 `.trimStart(), 'utf8');
 
     assert.throws(
       () => loadEvalTierConfig(deprecatedRuntimePath),
-      /Unexpected eval runtime field: model/,
+      /Unexpected eval runtime field: legacy_unknown_field/,
     );
 
     const negativeRetriesPath = path.join(tempRoot, 'negative-retries.toml');

@@ -128,10 +128,66 @@ const REQUIRED_RUNTIME_FIELDS = [
   'log_level',
   'print_logs',
 ];
+// Optional runtime fields consumed by the ported glue providers
+// (codex-sdk, claude-agent-sdk Node-side, opencode-cli-plugin sibling).
+// Each field is OPTIONAL — absent fields surface as `undefined` and the
+// consuming provider supplies its own default.
+//   agent_id              string                       — phase-02/03/04 metadata
+//   agent_entrypoint_file string                       — phase-02/03/04 metadata
+//   bootstrap_prompt      string                       — phase-02/03/04 prompt prefix
+//   auto_reply_text       string                       — phase-03 AskUserQuestion auto-reply
+//   max_auto_replies      integer >= 0                 — phase-03 reply cap
+//   idle_turn_stop        integer >= 0                 — phase-03 idle-turn detector
+//   plugin_subdirs        array of non-empty strings   — phase-03 plugin discovery
+//   opencode_runner_command  string                    — phase-04 OpenCode CLI override
+//   opencode_plugin_link_path string                   — phase-04 symlink target
+//   model                 non-empty string             — phase-02/03 model override
+//   capture_on_failure    boolean                      — phase-04 stdout-on-failure
+//   write_run_metadata    boolean                      — phase-04 emit .eval-run/provider.json
+//   load_local_env        boolean                      — phase-04 load EVAL_ROOT/.env
+//   opencode_parser_module string (require-path)       — phase-04 parser hook
+const OPTIONAL_RUNTIME_FIELDS = [
+  'empty_output_retries',
+  'agent_id',
+  'agent_entrypoint_file',
+  'bootstrap_prompt',
+  'auto_reply_text',
+  'max_auto_replies',
+  'idle_turn_stop',
+  'plugin_subdirs',
+  'opencode_runner_command',
+  'opencode_plugin_link_path',
+  'model',
+  'capture_on_failure',
+  'write_run_metadata',
+  'load_local_env',
+  'opencode_parser_module',
+];
 const ALLOWED_RUNTIME_FIELDS = new Set([
   ...REQUIRED_RUNTIME_FIELDS,
-  'empty_output_retries',
+  ...OPTIONAL_RUNTIME_FIELDS,
 ]);
+const STRING_OPTIONAL_FIELDS = [
+  'agent_id',
+  'agent_entrypoint_file',
+  'bootstrap_prompt',
+  'auto_reply_text',
+  'opencode_runner_command',
+  'opencode_plugin_link_path',
+];
+const NON_EMPTY_STRING_OPTIONAL_FIELDS = [
+  'model',
+  'opencode_parser_module',
+];
+const NON_NEGATIVE_INTEGER_OPTIONAL_FIELDS = [
+  'max_auto_replies',
+  'idle_turn_stop',
+];
+const BOOLEAN_OPTIONAL_FIELDS = [
+  'capture_on_failure',
+  'write_run_metadata',
+  'load_local_env',
+];
 const ALLOWED_TIER_FIELDS = new Set(['agent']);
 const REQUIRED_AGENT_PERMISSION = {
   read: 'allow',
@@ -195,6 +251,20 @@ function loadEvalTierConfig(configPath = CONFIG_PATH) {
       logLevel: runtime.log_level,
       printLogs: runtime.print_logs,
       emptyOutputRetries: normalizeEmptyOutputRetries(runtime.empty_output_retries),
+      agentId: runtime.agent_id,
+      agentEntrypointFile: runtime.agent_entrypoint_file,
+      bootstrapPrompt: runtime.bootstrap_prompt,
+      autoReplyText: runtime.auto_reply_text,
+      maxAutoReplies: runtime.max_auto_replies,
+      idleTurnStop: runtime.idle_turn_stop,
+      pluginSubdirs: runtime.plugin_subdirs,
+      opencodeRunnerCommand: runtime.opencode_runner_command,
+      opencodePluginLinkPath: runtime.opencode_plugin_link_path,
+      model: runtime.model,
+      captureOnFailure: runtime.capture_on_failure,
+      writeRunMetadata: runtime.write_run_metadata,
+      loadLocalEnv: runtime.load_local_env,
+      opencodeParserModule: runtime.opencode_parser_module,
     },
     tiers: Object.fromEntries(
       Object.entries(tiers).map(([tierName, tier]) => [tierName, { agent: tier.agent }]),
@@ -233,6 +303,53 @@ function validateRuntime(runtime) {
   }
 
   normalizeEmptyOutputRetries(runtime.empty_output_retries);
+
+  for (const field of STRING_OPTIONAL_FIELDS) {
+    if (runtime[field] === undefined) continue;
+    if (typeof runtime[field] !== 'string') {
+      throw new Error(`Invalid eval runtime field: ${field} must be a string`);
+    }
+  }
+
+  for (const field of NON_EMPTY_STRING_OPTIONAL_FIELDS) {
+    if (runtime[field] === undefined) continue;
+    if (typeof runtime[field] !== 'string' || runtime[field].trim() === '') {
+      throw new Error(
+        `Invalid eval runtime field: ${field} must be a non-empty string`,
+      );
+    }
+  }
+
+  for (const field of NON_NEGATIVE_INTEGER_OPTIONAL_FIELDS) {
+    if (runtime[field] === undefined) continue;
+    if (!Number.isInteger(runtime[field]) || runtime[field] < 0) {
+      throw new Error(
+        `Invalid eval runtime field: ${field} must be a non-negative integer`,
+      );
+    }
+  }
+
+  for (const field of BOOLEAN_OPTIONAL_FIELDS) {
+    if (runtime[field] === undefined) continue;
+    if (typeof runtime[field] !== 'boolean') {
+      throw new Error(`Invalid eval runtime field: ${field} must be a boolean`);
+    }
+  }
+
+  if (runtime.plugin_subdirs !== undefined) {
+    if (!Array.isArray(runtime.plugin_subdirs)) {
+      throw new Error(
+        'Invalid eval runtime field: plugin_subdirs must be an array of non-empty strings',
+      );
+    }
+    for (const entry of runtime.plugin_subdirs) {
+      if (typeof entry !== 'string' || entry.trim() === '') {
+        throw new Error(
+          'Invalid eval runtime field: plugin_subdirs must be an array of non-empty strings',
+        );
+      }
+    }
+  }
 }
 
 function loadOpenCodeAgents(opencodeConfigPath) {
@@ -322,6 +439,10 @@ function isPlainObject(value) {
 module.exports = {
   CONFIG_PATH,
   REQUIRED_TIERS,
+  ALLOWED_RUNTIME_FIELDS,
+  REQUIRED_RUNTIME_FIELDS,
+  OPTIONAL_RUNTIME_FIELDS,
+  ALLOWED_TIER_FIELDS,
   loadEvalTierConfig,
   resolveEvalTier,
   parseTierConfig,

@@ -24,9 +24,11 @@ test('resolveConfigFile materializes an opencode provider from metadata.eval_tie
   assert.match(resolved.providers[0].config.opencode_config, /opencode\.json$/);
   assert.equal(resolved.providers[0].config.project_dir, path.resolve(__dirname, '..', '..', '..'));
   assert.equal('max_turns' in resolved.providers[0].config, false);
-  assert.equal('model' in resolved.providers[0].config, false);
   assert.equal('provider_id' in resolved.providers[0].config, false);
   assert.equal('tools' in resolved.providers[0].config, false);
+  assert.equal(resolved.providers[0].config.model, undefined);
+  assert.equal(resolved.providers[0].config.bootstrap_prompt, undefined);
+  assert.equal(resolved.providers[0].config.capture_on_failure, undefined);
   assert.match(resolved.prompts[0], /harness-smoke/);
 });
 
