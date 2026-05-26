@@ -319,9 +319,9 @@ running or opt into a runner-managed `.env` (see the
 | --- | --- | --- | --- |
 | `opencode_cli` | Inherits the calling shell's environment — auth is delegated to OpenCode's own config (`opencode.json`, `OPENCODE_CONFIG`, or the OpenCode provider table). | `OPENCODE_CONFIG`, `XDG_STATE_HOME` (the base provider sets these per run; spread `process.env` otherwise). | Base provider does **not** read `.env`. Consumers who want `.env` auto-load layer it via the `opencode-cli-plugin` wrapper with `load_local_env = true`. The OpenCode binary must be on `PATH` (override via the plugin wrapper's `opencode_runner_command`). |
 | `claude_agent_sdk` | `ANTHROPIC_API_KEY` | — | Python kind via `uv run --with claude-agent-sdk==…`. Async lifecycle; stateful `ClaudeSDKClient` for multi-turn. |
-| `codex_sdk` | Codex CLI login state (`~/.codex/auth.json`) | `OPENAI_API_KEY` (gateway fallback) | Prefers existing Codex CLI login; falls back to API key. Bridge reserves a per-session HOME and a per-case `git init`-ed workspace before invoking `Codex.startThread`. |
-| `openhands_sdk` | `OPENHANDS_API_KEY` *or* prefix-routed `_API_KEY` | `OPENHANDS_BASE_URL`, `OPENHANDS_MODEL_OVERRIDE` | Gateway mode (`base_url` set): only `OPENHANDS_API_KEY` is consulted. Legacy mode routes by model prefix (`openai/…` → `OPENAI_API_KEY`, etc.). |
-| `opencode_sdk` | `OPENCODE_API_KEY` | — | TypeScript SDK; boots an ephemeral `127.0.0.1:0` OpenCode server per run. Agents limited to `{build, plan, general}`. |
+| `codex_sdk` | `OPENAI_API_KEY` | `OPENAI_BASE_URL` (override the OpenAI endpoint, e.g. for a gateway) | Bridge passes `apiKey: process.env.OPENAI_API_KEY` straight into `new Codex(...)` and reserves a per-session HOME (`mkdtemp`) so any `~/.codex/auth.json` on the host is **not** consulted. First turn of each session lazily `mkdtemp`s a per-case workspace, runs `git init`, then calls `Codex.startThread`; subsequent turns in the same session reuse that thread + workspace until `close()`. |
+| `openhands_sdk` | `OPENHANDS_API_KEY` *or* prefix-routed `_API_KEY` | `OPENHANDS_BASE_URL`, `OPENHANDS_MODEL_OVERRIDE`, `cfg.extra.base_url` | Gateway mode triggers when **either** `OPENHANDS_BASE_URL` env or `cfg.extra.base_url` is set (env wins on collision); in that mode only `OPENHANDS_API_KEY` is consulted. Legacy mode (neither set) routes by model prefix — `openai/…` → `OPENAI_API_KEY`, `anthropic/…` → `ANTHROPIC_API_KEY`, `openrouter/…` → `OPENROUTER_API_KEY`. |
+| `opencode_sdk` | Depends on the chosen model — the harness boots a local `@opencode-ai/sdk` server that inherits `process.env` and routes `body.model = {providerID, modelID}` to OpenCode's provider table. `openai/…` ⇒ `OPENAI_API_KEY`, `anthropic/…` ⇒ `ANTHROPIC_API_KEY`, `opencode-go/…` ⇒ `OPENCODE_API_KEY`, etc. | — | TypeScript SDK; boots an ephemeral `127.0.0.1:0` OpenCode server per run. Agents limited to `{build, plan, general}`. |
 
 Plugin glue providers wrap one of the kinds above and add a few extra
 hooks. They are not separate `provider_kind` values — they are
@@ -336,10 +336,17 @@ delegate to the underlying transport.
 
 #### Secret hygiene
 
-- Defense-in-depth redactor (`scripts/framework/_secret_redactor.js`)
-  strips `*_API_KEY`, `*_TOKEN`, `*_SECRET`, and `sk_*` patterns from
-  error messages and NDJSON events before they reach Promptfoo output or
-  CI logs.
+- Defense-in-depth redactor — Node `scripts/framework/secret_redactor.js`
+  and its Python parity twin
+  `scripts/framework/providers/_secret_redactor.py` — applies the regex
+  patterns in `config/redaction-patterns.json` to error messages and
+  NDJSON events before they reach Promptfoo output or CI logs. Current
+  pattern set: Anthropic keys (`sk-ant-…`), OpenAI keys (`sk-…`),
+  OpenHands keys (`oh-…`), AWS access key IDs (`AKIA…`) and high-entropy
+  AWS secret access keys, GitHub PATs (`gh[pousr]_…`), `Bearer …`
+  tokens, and GCP service-account `private_key` JSON snippets.
+  Format-driven, not env-var-driven — values that don't match these
+  shapes pass through.
 - `tests/evals/.env` is git-ignored by the bootstrap CLI; verify before
   committing.
 - **Gotcha:** if your shell already has `OPENHANDS_BASE_URL` exported
