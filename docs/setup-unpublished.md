@@ -229,6 +229,42 @@ Expected output for each method:
 
 ---
 
+## Step 3.5 — Configure secrets
+
+Step 4's `eval:harness-smoke` hits a real model — same auth model as the
+published flow.
+
+> **Return to the consumer repo root first.** Step 3 left your shell
+> inside `tests/evals/`. The paths in `setup.md` Step 1.5 (and in
+> Step 4 below) are repo-root-relative — running them from
+> `tests/evals/` would point at non-existent `tests/evals/tests/evals/…`
+> paths and silently leave `process.env` without API keys.
+>
+> ```bash
+> cd "$(git rev-parse --show-toplevel)"
+> ```
+
+Then follow [`setup.md`](setup.md) **Step 1.5 — Configure secrets** to:
+
+1. Create `tests/evals/.env` and add `tests/evals/.env` to `.gitignore`
+   (the bootstrap does NOT auto-ignore it).
+2. Populate keys per the `provider_kind`s referenced in
+   `tests/evals/config/eval-tiers.toml` (see the table in `setup.md`
+   Step 1.5).
+3. Either `set -a; . tests/evals/.env; set +a` before running `ad-evals`,
+   or set `load_local_env = true` in `[runtime]` if your `provider_id`
+   points at `framework://opencode-cli-plugin-provider.js`.
+
+Worktree-specific reminder: keys live in `process.env`, not in
+`$HARNESS_PATH`. None of the three install methods change auth — you
+configure `.env` once on the consumer side and it works against every
+method.
+
+Watch out for the leaked `OPENHANDS_BASE_URL` gotcha — same workaround
+applies (`OPENHANDS_BASE_URL= npm run eval:smoke`).
+
+---
+
 ## Step 4 — Verify the install
 
 ```bash

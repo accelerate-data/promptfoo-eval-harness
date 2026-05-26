@@ -90,7 +90,7 @@ Run from the consumer repo's `tests/evals/` directory:
 
 Per-case lifecycle for SDK providers (`opencode_sdk`, `codex_sdk`): every call goes through `init → turn[*] → finalize → shutdown`. `init()` boots a fresh ephemeral server on a dynamic port; `shutdown()` closes it within 5 s. There is no long-lived daemon and no port pinning — verified end-to-end against both the mock and the real SDKs.
 
-Secrets must be present in `process.env` before invocation — the harness has no dotenv loader. Consumers typically keep keys in `tests/evals/.env`, add that path to `.gitignore` themselves (the bootstrap does not), and source it from their shell rc or CI step before running. The framework never bundles or ships keys.
+Secrets must be present in `process.env` before invocation — the harness has no dotenv loader at the framework level. Consumers keep keys in `tests/evals/.env`, add that path to `.gitignore` themselves (the bootstrap does NOT auto-ignore it), and either `set -a; . tests/evals/.env; set +a` from their shell rc / CI step before running, OR opt into `framework://opencode-cli-plugin-provider.js` with `load_local_env = true` in `[runtime]` (the plugin variant auto-reads `<repo-root>/.env` then `tests/evals/.env`). The framework never bundles or ships keys. Step-by-step (including the per-`provider_kind` env-var matrix and the leaked `OPENHANDS_BASE_URL` gotcha): `docs/setup.md` → "Step 1.5 — Configure secrets".
 
 ## Rules for New Code
 

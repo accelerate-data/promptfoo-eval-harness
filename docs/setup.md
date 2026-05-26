@@ -52,6 +52,76 @@ Dependencies are installed automatically. The command ends with `==> Done.`
 
 ---
 
+## Step 1.5 — Configure secrets
+
+`eval-harness-init` does NOT set up auth. Step 2's `eval:harness-smoke`
+hits a real model and needs API keys in `process.env` before it runs.
+Bootstrap your `.env` now so the smoke (and every subsequent package)
+has what it needs.
+
+### Create `tests/evals/.env` and git-ignore it
+
+```bash
+touch tests/evals/.env
+# eval-harness-init does NOT auto-ignore .env — add it now.
+echo 'tests/evals/.env' >> .gitignore
+git check-ignore tests/evals/.env   # expect: tests/evals/.env
+```
+
+### Add keys for the `provider_kind`s your tiers use
+
+Open `tests/evals/config/eval-tiers.toml`, note which `provider_kind`
+each tier uses, then populate `tests/evals/.env`. Compact lookup
+(full reference: **Provider Key Matrix** in the Reference section):
+
+| `provider_kind` | Required in `tests/evals/.env` |
+| --- | --- |
+| `opencode_cli` | Inherits the calling shell's env; OpenCode handles its own auth via `opencode.json` / `OPENCODE_CONFIG`. Add `OPENCODE_API_KEY` only if `opencode.json` references it directly. |
+| `opencode_sdk` | Model-prefix routed: `openai/…` → `OPENAI_API_KEY`, `anthropic/…` → `ANTHROPIC_API_KEY`, `opencode-go/…` → `OPENCODE_API_KEY` |
+| `codex_sdk` | `OPENAI_API_KEY=sk-…` (optional `OPENAI_BASE_URL=https://…` to route through a gateway) |
+| `openhands_sdk` — gateway mode | `OPENHANDS_API_KEY=oh-…` + `OPENHANDS_BASE_URL=https://…` (optional `OPENHANDS_MODEL_OVERRIDE=anthropic/claude-…` — beats the tier `model` field) |
+| `openhands_sdk` — legacy mode (no `OPENHANDS_BASE_URL`) | Model-prefix routed: `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` |
+| `openhands_agent_server` | Model-prefix routed by the wrapper's `buildLlmPayload()`: `openai/…` → `OPENAI_API_KEY`, `anthropic/…` → `ANTHROPIC_API_KEY`, `groq/…` → `GROQ_API_KEY`, `deepseek/…` → `DEEPSEEK_API_KEY`, `opencode-go/…` → `OPENCODE_API_KEY`. Optional: `OPENHANDS_MODEL_OVERRIDE` (per-run model swap). This `provider_kind` does NOT consume `OPENHANDS_API_KEY` and does NOT honor `OPENHANDS_BASE_URL` as a gateway switch (that is the `openhands_sdk` kind only). `OPENHANDS_SERVER_URL` is CLI-injected — do NOT set it for normal runs. |
+| `claude_agent_sdk` | `ANTHROPIC_API_KEY=sk-ant-…` |
+
+### Load the keys into the calling process
+
+The framework has no built-in dotenv loader — keys must be in
+`process.env` when `ad-evals` starts. Two supported patterns:
+
+1. **Source the file in your shell** (works for every `provider_kind`):
+
+   ```bash
+   set -a; . tests/evals/.env; set +a
+   ```
+
+   Add the same one-liner to CI before invoking `npm run eval:*`.
+
+2. **Opt into the `opencode-cli` plugin loader** (only when your
+   `[runtime].provider_id` points at
+   `framework://opencode-cli-plugin-provider.js`, NOT the base). Set
+   `load_local_env = true` in the `[runtime]` block of
+   `tests/evals/config/eval-tiers.toml`. The plugin then reads
+   `<repo-root>/.env` first, then `tests/evals/.env` at call time —
+   neither call overwrites pre-existing `process.env` keys.
+
+### Gotcha — leaked `OPENHANDS_BASE_URL`
+
+If your shell already exports `OPENHANDS_BASE_URL` (sourced from a
+parent project's `.env`, or set globally in your shell rc), the
+`openhands_sdk` adapter silently enters gateway mode and may surface a
+misleading `OpenAIException - Connection error`. Clear with an empty
+prefix when running a scenario that should NOT use the gateway:
+
+```bash
+OPENHANDS_BASE_URL= npm run eval:smoke
+```
+
+See the **OpenHands SDK — gateway mode** and **Provider Key Matrix**
+sections in the Reference for the full auth model.
+
+---
+
 ## Step 2 — Verify the install
 
 ```bash
