@@ -49,7 +49,7 @@ Dependencies are installed automatically. The command ends with `==> Done.`
 cd tests/evals
 npm test                    # framework contract tests — no API calls
 npm run doctor              # prints resolved repo, state, and cache paths
-npm run eval:harness-smoke  # one live run using the starter package
+npm run eval:harness-smoke  # alias for: ad-evals run packages/harness-smoke/promptfooconfig.json
 ```
 
 All three must pass before continuing. If `eval:harness-smoke` fails, check
@@ -147,10 +147,10 @@ cd tests/evals && npm run eval:regression
 | --- | --- |
 | `npm test` | Framework contract tests. Deterministic, no API calls. |
 | `npm run doctor` | Print resolved repo, state, and cache paths. |
-| `npm run eval:harness-smoke` | Run the built-in starter package. Confirms OpenCode is wired. |
-| `npm run eval:smoke` | Run the `[smoke]` test from every package. |
-| `npm run eval:regression` | Run all tests in all packages. |
-| `ad-evals run <config>` | Run one specific package config. |
+| `npm run eval:harness-smoke` | Alias for `ad-evals run packages/harness-smoke/promptfooconfig.json`. Runs the built-in starter package; confirms OpenCode is wired. |
+| `npm run eval:smoke` | Alias for `ad-evals smoke`. Runs the `[smoke]` test from every package. |
+| `npm run eval:regression` | Alias for `ad-evals regression`. Runs all tests in all packages. |
+| `ad-evals run <config>` | Run one specific package config directly. |
 
 ### Tier selection
 
