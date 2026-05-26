@@ -5,5 +5,7 @@ module.exports = {
   ...require('./paths'),
   ...require('./provider-run-metadata'),
   ...require('./resolve-promptfoo-config'),
+  makeClaudeAgentSdkProvider: require('./claude-agent-sdk-provider'),
+  makeCodexSdkProvider: require('./codex-sdk-provider'),
   roots: require('./roots'),
 };
