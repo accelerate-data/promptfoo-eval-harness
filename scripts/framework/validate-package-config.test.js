@@ -2,6 +2,8 @@
 
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const { validate } = require('./validate-package-config');
@@ -261,5 +263,152 @@ describe('validate — error object shape', () => {
     assert.ok(!result.ok);
     const e = result.errors[0];
     assert.ok(e.path.includes('['), `path should use bracket notation, got: ${e.path}`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 05 — openhands_agent_server (wrapper kind via extraKinds + adapter file)
+// ---------------------------------------------------------------------------
+describe('validate — openhands_agent_server (Phase 05)', () => {
+  function makeEvalRoot(adapter, { filename = 'openhands.json' } = {}) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'phase05-validate-'));
+    const body = adapter === null ? {} : { adapter };
+    fs.writeFileSync(path.join(dir, filename), JSON.stringify(body, null, 2));
+    return dir;
+  }
+
+  const FULL_ADAPTER = {
+    agent_id: 'eval-agent',
+    agent_entrypoint_file: 'agents/eval.py',
+    agent_semantics: 'react-loop',
+    eval_mode_preamble: 'You are running in eval mode. Respond with plain text only.',
+  };
+
+  test('t1 — valid agent_server tier with adapter file passes', () => {
+    const evalRoot = makeEvalRoot(FULL_ADAPTER);
+    const config = {
+      version: 'v1',
+      tiers: {
+        standard: {
+          providers: [
+            {
+              provider_kind: 'openhands_agent_server',
+              model: 'anthropic/claude-sonnet-4-6',
+              label: 'agent-server-sonnet',
+            },
+          ],
+        },
+      },
+    };
+    const result = validate(config, {
+      kindRegistry: KIND_REGISTRY,
+      evalRoot,
+      extraKinds: ['openhands_agent_server'],
+    });
+    assert.ok(result.ok, `Expected ok:true, got: ${JSON.stringify(result.errors)}`);
+  });
+
+  test('t2 — adapter missing agent_id → error on adapter.agent_id path', () => {
+    const partial = { ...FULL_ADAPTER };
+    delete partial.agent_id;
+    const evalRoot = makeEvalRoot(partial);
+    const config = {
+      version: 'v1',
+      tiers: {
+        standard: {
+          providers: [
+            { provider_kind: 'openhands_agent_server', model: 'anthropic/claude-sonnet-4-6' },
+          ],
+        },
+      },
+    };
+    const result = validate(config, {
+      kindRegistry: KIND_REGISTRY,
+      evalRoot,
+      extraKinds: ['openhands_agent_server'],
+    });
+    assert.ok(!result.ok);
+    assertError(result.errors, '.adapter.agent_id', 'non-empty string');
+  });
+
+  test('t3 — bogus provider_kind lists merged set including openhands_agent_server', () => {
+    const config = {
+      version: 'v1',
+      tiers: {
+        standard: {
+          providers: [{ provider_kind: 'bogus', model: 'x' }],
+        },
+      },
+    };
+    const result = validate(config, {
+      kindRegistry: KIND_REGISTRY,
+      extraKinds: ['openhands_agent_server'],
+    });
+    assert.ok(!result.ok);
+    const e = result.errors.find((x) => x.path.endsWith('.provider_kind'));
+    assert.ok(e, `expected provider_kind error, got: ${JSON.stringify(result.errors)}`);
+    assert.ok(
+      e.expected.includes('openhands_agent_server'),
+      `expected message lists openhands_agent_server, got: ${e.expected}`,
+    );
+    for (const k of Object.keys(KIND_REGISTRY)) {
+      assert.ok(e.expected.includes(k), `expected list to include ${k}, got: ${e.expected}`);
+    }
+  });
+
+  test('t4 — openhands_agent_server without model → non-empty model error', () => {
+    const evalRoot = makeEvalRoot(FULL_ADAPTER);
+    const config = {
+      version: 'v1',
+      tiers: {
+        standard: {
+          providers: [{ provider_kind: 'openhands_agent_server' }],
+        },
+      },
+    };
+    const result = validate(config, {
+      kindRegistry: KIND_REGISTRY,
+      evalRoot,
+      extraKinds: ['openhands_agent_server'],
+    });
+    assert.ok(!result.ok);
+    assertError(result.errors, 'providers[0].model', 'non-empty model');
+  });
+
+  test('t5 — valid adapter WITHOUT microagent_install_path passes', () => {
+    const adapter = { ...FULL_ADAPTER };
+    assert.ok(!('microagent_install_path' in adapter), 'fixture must omit microagent_install_path');
+    const evalRoot = makeEvalRoot(adapter);
+    const config = {
+      version: 'v1',
+      tiers: {
+        standard: {
+          providers: [
+            { provider_kind: 'openhands_agent_server', model: 'anthropic/claude-sonnet-4-6' },
+          ],
+        },
+      },
+    };
+    const result = validate(config, {
+      kindRegistry: KIND_REGISTRY,
+      evalRoot,
+      extraKinds: ['openhands_agent_server'],
+    });
+    assert.ok(result.ok, `Expected ok:true (microagent_install_path is optional), got: ${JSON.stringify(result.errors)}`);
+  });
+
+  test('t6 — regression: existing call shape (no evalRoot, no extraKinds) still accepts the 5 registry kinds', () => {
+    const config = {
+      version: 'v1',
+      tiers: {
+        a: { providers: [{ provider_kind: 'opencode_cli', model: null }] },
+        b: { providers: [{ provider_kind: 'openhands_sdk', model: 'anthropic/claude-sonnet-4-6' }] },
+        c: { providers: [{ provider_kind: 'claude_agent_sdk', model: 'anthropic/claude-sonnet-4-6' }] },
+        d: { providers: [{ provider_kind: 'opencode_sdk', model: 'anthropic/claude-sonnet-4-6' }] },
+        e: { providers: [{ provider_kind: 'codex_sdk', model: 'gpt-4o' }] },
+      },
+    };
+    const result = validate(config, { kindRegistry: KIND_REGISTRY });
+    assert.ok(result.ok, `Expected ok:true, got: ${JSON.stringify(result.errors)}`);
   });
 });

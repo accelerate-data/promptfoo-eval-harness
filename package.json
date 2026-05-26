@@ -38,7 +38,8 @@
     "js-yaml": "^4.1.1",
     "p-limit": "^3.1.0",
     "promptfoo": "0.121.11",
-    "smol-toml": "^1.6.1"
+    "smol-toml": "^1.6.1",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "markdownlint-cli": "^0.48.0"

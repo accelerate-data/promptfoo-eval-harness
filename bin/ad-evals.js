@@ -84,12 +84,19 @@ function printValidationErrors(errors, logger) {
 
 /**
  * Attempt to load and validate the tier config from evalRoot.
- * Returns null if no config found (graceful skip for new/empty repos).
- * Returns exit code 2 on validation failure, 0 on success.
+ *
+ * Returns `{ exitCode, normalised }`:
+ *  - `exitCode === null` → continue (success or no-config-graceful-skip)
+ *  - `exitCode === number` → caller must return that code
+ *  - `normalised` is the parsed+normalised v1 tier config when validation
+ *    succeeds, or `null` otherwise (no-config / parse error / validation fail).
+ *
+ * Returning the already-parsed config lets the agent-server lifecycle hook
+ * inspect provider kinds without a second TOML parse.
  *
  * @param {string} evalRoot
  * @param {object} logger
- * @returns {number|null} exit code or null to continue
+ * @returns {{ exitCode: number|null, normalised: object|null }}
  */
 function runTierConfigValidation(evalRoot, logger) {
   const { parseTierConfig } = require('../scripts/framework/eval-tier-config');
@@ -97,7 +104,7 @@ function runTierConfigValidation(evalRoot, logger) {
 
   const configPath = path.join(evalRoot, 'config', 'eval-tiers.toml');
   if (!fs.existsSync(configPath)) {
-    return null; // no config to validate — graceful skip
+    return { exitCode: null, normalised: null };
   }
 
   let raw;
@@ -105,23 +112,45 @@ function runTierConfigValidation(evalRoot, logger) {
     raw = parse(fs.readFileSync(configPath, 'utf8'));
   } catch (e) {
     logger.error(`Failed to parse eval-tiers.toml: ${e.message}`);
-    return 2;
+    return { exitCode: 2, normalised: null };
   }
 
-  let normalized;
+  let normalised;
   try {
-    normalized = parseTierConfig(raw, configPath);
+    normalised = parseTierConfig(raw, configPath);
   } catch (e) {
     logger.error(`Tier config shape error: ${e.message}`);
-    return 2;
+    return { exitCode: 2, normalised: null };
   }
 
   const kindRegistry = makeBridge._KIND_REGISTRY;
-  const result = validate(normalized, { kindRegistry });
+  const result = validate(normalised, {
+    kindRegistry,
+    evalRoot,
+    extraKinds: ['openhands_agent_server'],
+  });
   if (!result.ok) {
-    return printValidationErrors(result.errors, logger);
+    return { exitCode: printValidationErrors(result.errors, logger), normalised: null };
   }
-  return null; // validation passed — continue
+  return { exitCode: null, normalised };
+}
+
+/**
+ * Returns true iff the normalised tier config declares at least one provider
+ * with `provider_kind === 'openhands_agent_server'`. Used to decide whether
+ * `run()` must spin up the agent-server daemon before invoking promptfoo.
+ *
+ * Safe against `null` (no tier config file) — returns false.
+ *
+ * @param {object|null} normalised
+ * @returns {boolean}
+ */
+function _anyTierUsesAgentServer(normalised) {
+  if (!normalised || !normalised.tiers) return false;
+  return Object.values(normalised.tiers).some((tier) =>
+    Array.isArray(tier && tier.providers) &&
+    tier.providers.some((p) => p && p.provider_kind === 'openhands_agent_server'),
+  );
 }
 
 function buildPromptfooArgs({ command, rest = [], packageConfigs = [] }) {
@@ -177,7 +206,34 @@ function runDoctor(flags, paths, logger) {
     return runDoctorInstallProviders(paths, logger);
   }
   logger.log(JSON.stringify(paths, null, 2));
+
+  // Static checks for the openhands_agent_server kind. We never start a
+  // daemon here — only confirm the prerequisites are in place.
+  _doctorCheckUvx(logger);
+  _doctorCheckAgentServerPin(logger);
+
   return 0;
+}
+
+function _doctorCheckUvx(logger) {
+  try {
+    execFileSync('uvx', ['--help'], { stdio: 'ignore' });
+    logger.log('  ✓ uvx available');
+  } catch {
+    logger.error('  ✗ uvx not found (required for openhands_agent_server)');
+  }
+}
+
+function _doctorCheckAgentServerPin(logger) {
+  try {
+    const { loadSdkPins } = require('../scripts/framework/sdk-pins');
+    const pins = loadSdkPins();
+    const v = pins.openhands_agent_server && pins.openhands_agent_server.version;
+    if (v) logger.log(`  ✓ openhands-agent-server pin: ${v}`);
+    else logger.error('  ✗ sdk-pins.toml missing [openhands_agent_server]');
+  } catch (e) {
+    logger.error(`  ✗ sdk-pins.toml load failed: ${e.message}`);
+  }
 }
 
 /**
@@ -476,11 +532,13 @@ function run(
 
   // Validate tier config before dispatching to Promptfoo (B.11).
   // Only runs for eval commands; skips passthrough and informational commands.
+  let normalisedTierConfig = null;
   if (EVAL_COMMANDS.has(command)) {
-    const validationResult = runTierConfigValidation(paths.evalRoot, logger);
-    if (validationResult !== null) {
-      return validationResult;
+    const validation = runTierConfigValidation(paths.evalRoot, logger);
+    if (validation.exitCode !== null) {
+      return validation.exitCode;
     }
+    normalisedTierConfig = validation.normalised;
   }
 
   const promptfooArgs = buildPromptfooArgs({
@@ -488,6 +546,43 @@ function run(
     rest,
     packageConfigs: discoverConfigs(paths.evalRoot),
   });
+
+  // Agent-server daemon lifecycle: spin up only when a tier declares the new
+  // provider kind, inject `OPENHANDS_SERVER_URL` so the promptfoo subprocess
+  // (and the JS provider it loads) hits the local daemon, and tear it down in
+  // `finally`. `runPromptfoo` inherits `process.env` — there is no env-arg
+  // surface to thread the URL through, so we mutate-and-restore here.
+  if (_anyTierUsesAgentServer(normalisedTierConfig)) {
+    const harnessRoot = path.resolve(__dirname, '..');
+    return (async () => {
+      const {
+        startAgentServerDaemon,
+        stopAgentServerDaemon,
+      } = require('../scripts/framework/agent-server-lifecycle');
+      logger.info('[ad-evals] starting openhands-agent-server daemon...');
+      const t0 = Date.now();
+      const handle = await startAgentServerDaemon({
+        rootDir: harnessRoot,
+        evalRoot: paths.evalRoot,
+        logger,
+      });
+      logger.info(`[ad-evals] agent-server ready on ${handle.url} (${Date.now() - t0}ms)`);
+      const priorUrl = process.env.OPENHANDS_SERVER_URL;
+      process.env.OPENHANDS_SERVER_URL = handle.url;
+      try {
+        return await runPromptfoo(promptfooArgs);
+      } finally {
+        try {
+          await stopAgentServerDaemon(handle);
+        } catch (e) {
+          logger.error(`[ad-evals] daemon shutdown failed: ${e.message}`);
+        }
+        if (priorUrl === undefined) delete process.env.OPENHANDS_SERVER_URL;
+        else process.env.OPENHANDS_SERVER_URL = priorUrl;
+      }
+    })();
+  }
+
   return runPromptfoo(promptfooArgs);
 }
 
@@ -540,4 +635,6 @@ module.exports = {
   runDoctor,
   runDoctorInstallProviders,
   runDirScenarios,
+  // exported for tests
+  _anyTierUsesAgentServer,
 };

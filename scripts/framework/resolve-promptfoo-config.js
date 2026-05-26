@@ -2,8 +2,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const yaml = require('js-yaml');
+const { parse: parseToml } = require('smol-toml');
 
-const { loadEvalTierConfig, resolveEvalTier, parseTierConfig } = require('./eval-tier-config');
+const {
+  CONFIG_PATH: TIER_CONFIG_PATH,
+  loadEvalTierConfig,
+  resolveEvalTier,
+  parseTierConfig,
+} = require('./eval-tier-config');
 const { EVAL_ROOT, FRAMEWORK_ROOT } = require('./roots');
 
 const FRAMEWORK_SCHEME = 'framework://';
@@ -51,7 +57,20 @@ function resolveProviderId(providerId) {
   return `file://${path.join(EVAL_ROOT, providerPath)}`;
 }
 
-function resolveConfigFile(relativePath) {
+function _readRawTierConfig(configPath = TIER_CONFIG_PATH, { fsImpl = fs } = {}) {
+  return parseToml(fsImpl.readFileSync(configPath, 'utf8'));
+}
+
+function _isV1RawShape(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  if (raw.version === 'v1') return true;
+  if (!raw.tiers || typeof raw.tiers !== 'object') return false;
+  return Object.values(raw.tiers).some(
+    (t) => t && Array.isArray(t.providers),
+  );
+}
+
+function resolveConfigFile(relativePath, { rawTierConfig = null } = {}) {
   const normalizedPath = normalizeConfigPath(relativePath);
   const parsed = readYaml(normalizedPath);
   const evalTier = parsed?.metadata?.eval_tier;
@@ -61,9 +80,28 @@ function resolveConfigFile(relativePath) {
 
   const sourceConfigDir = path.dirname(path.join(EVAL_ROOT, normalizedPath));
   const targetConfigDir = path.dirname(path.join(TMP_ROOT, normalizedPath));
+  const rewritten = rewriteRelativeFileUrls(parsed, sourceConfigDir, targetConfigDir);
+
+  const rawTier = rawTierConfig || _readRawTierConfig();
+  if (_isV1RawShape(rawTier)) {
+    // Phase 1: collapse scenario fan-out — Promptfoo iterates the consumer's
+    // tests[] array against each emitted provider. Per-scenario provider
+    // entries (--compare semantics) are deferred to Phase 2.
+    const { providers: rawProviders } = resolveMultiProviderConfig(
+      rawTier,
+      [{}],
+      evalTier,
+      { sourcePath: TIER_CONFIG_PATH },
+    );
+    const providers = rawProviders.map((p) => ({
+      ...p,
+      id: resolveProviderId(p.id),
+    }));
+    return { ...rewritten, providers };
+  }
 
   return {
-    ...rewriteRelativeFileUrls(parsed, sourceConfigDir, targetConfigDir),
+    ...rewritten,
     providers: [resolveProviderBlock(evalTier)],
   };
 }
@@ -167,9 +205,19 @@ function rewriteRelativeFileUrls(value, sourceConfigDir, targetConfigDir) {
 
 /**
  * The canonical bridge URL (spec §2.2).
- * All provider entries point here regardless of provider_kind.
+ * Default for all provider_kinds routed through _node_bridge.js.
  */
 const BRIDGE_FILE_URL = `file://${path.join(FRAMEWORK_ROOT, '_node_bridge.js')}`;
+
+/**
+ * Wrapper-style provider URL for openhands_agent_server.
+ *
+ * This kind owns its own daemon lifecycle (CLI-managed) and a JS provider
+ * file — it does NOT route through _node_bridge.js. The resolver emits this
+ * URL when provider_kind === 'openhands_agent_server'; the file lives at
+ * scripts/framework/openhands-agent-server-provider.js.
+ */
+const AGENT_SERVER_FILE_URL = 'framework://openhands-agent-server-provider.js';
 
 /**
  * Build a stable run_id for a single ad-evals invocation.
@@ -214,6 +262,28 @@ function _buildCaseId(tierName, providerIndex, scenarioIndex, runId) {
  * @returns {object} Promptfoo provider object
  */
 function _buildBridgeProviderEntry(tierName, providerEntry, providerIndex, scenarioIndex, runId) {
+  const case_id = _buildCaseId(tierName, providerIndex, scenarioIndex, runId);
+
+  if (providerEntry.provider_kind === 'openhands_agent_server') {
+    // Wrapper-style provider: bypasses _node_bridge.js entirely. All consumer
+    // fields (agent, openhands_config, agent_config, …) arrive at config top
+    // level — there is no provider_options bag because the bridge security
+    // model (env allowlist + redaction) does not apply when we never enter
+    // the bridge.
+    const { provider_kind, model, label, ...rest } = providerEntry;
+    return {
+      id: AGENT_SERVER_FILE_URL,
+      label: label || `${tierName}/openhands_agent_server/${model || rest.agent || 'unknown'}`,
+      config: {
+        provider_kind,
+        model: model || null,
+        run_id: runId,
+        case_id,
+        ...rest,
+      },
+    };
+  }
+
   const { provider_kind, model, label, agent_config, ...rest } = providerEntry;
   // Build provider_options from remaining fields (not provider_kind / model / label)
   const provider_options = Object.keys(rest).length > 0 ? rest : undefined;
@@ -222,7 +292,7 @@ function _buildBridgeProviderEntry(tierName, providerEntry, providerIndex, scena
     provider_kind,
     model: model || null,
     run_id: runId,
-    case_id: _buildCaseId(tierName, providerIndex, scenarioIndex, runId),
+    case_id,
     ...(label ? { provider_label: label } : {}),
     ...(provider_options ? { provider_options } : {}),
   };
@@ -287,4 +357,6 @@ module.exports = {
   resolveMultiProviderConfig,
   getRunId,
   _resetRunId,
+  _isV1RawShape,
+  _readRawTierConfig,
 };

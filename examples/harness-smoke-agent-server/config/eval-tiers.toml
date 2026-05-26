@@ -1,0 +1,12 @@
+# Gated E2E fixture for openhands-agent-server smoke run.
+# Driven by `bin/ad-evals.test.js` T15 when OPENHANDS_E2E=1.
+# The CLI auto-starts the agent-server daemon on a free 127.0.0.1 port
+# and injects OPENHANDS_SERVER_URL into the provider env.
+
+version = "v1"
+default_tier = "light"
+
+[tiers.light]
+providers = [
+  { provider_kind = "openhands_agent_server", model = "openai/gpt-4o-mini", agent = "eval_light", openhands_config = "openhands.json" },
+]

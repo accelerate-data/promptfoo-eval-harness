@@ -199,6 +199,7 @@ VD-2174-9 lands the first of the three Node-SDK-flavoured providers that piggyba
 | `claude_agent_sdk` | stable | subprocess (`uv run --with claude-agent-sdk==0.2.85`) | `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-haiku-4-5` (aliases: `opus`, `sonnet`, `haiku`) | `Read`, `Write`, `Edit`, `Glob`, `Grep` | `Bash` requires `permissions.allow_shell=true`; `WebSearch`, `WebFetch`, `AskUserQuestion` require `permissions.allow_web=true` |
 | `opencode_sdk` | stable | inproc (`@opencode-ai/sdk@1.15.10`, requires Node ≥ 20) | `anthropic/claude-sonnet-4-6`, `openai/gpt-4o` (any model the OpenCode server accepts) | per OpenCode agent definition (`build` / `plan` / `general`) | per OpenCode agent definition |
 | `codex_sdk` | stable | inproc (`@openai/codex-sdk@0.133.0` + `@openai/codex@0.133.0` CLI bin, requires Node ≥ 20) | `gpt-4o`, `gpt-4.1` (any model the Codex SDK accepts) | per Codex CLI sandbox/reasoning profile | `sandbox_mode` ∈ `{read-only, workspace-write, danger-full-access}`; `model_reasoning_effort` ∈ `{low, medium, high}` |
+| `openhands_agent_server` | stable | wrapper Node (`framework://openhands-agent-server-provider.js`); CLI auto-manages a `uvx --from openhands-agent-server@<pin> agent-server` daemon on a free `127.0.0.1` port and injects `OPENHANDS_SERVER_URL` | LiteLLM-prefixed (`openai/...`, `anthropic/...`, gateway-shaped slugs) | per adapter's `agent` map entry in `openhands.json` | adapter block (`agent_id`, `agent_entrypoint_file`, `agent_semantics`, `eval_mode_preamble`) is required; see "Daemon-Lifecycle Providers" below |
 
 ### Subprocess shape
 
@@ -326,6 +327,20 @@ The provider's `_mapError` collapses SDK exceptions onto the contract codes:
 ### Mock-mode scenario (codex_sdk)
 
 Layer 4 nightly coverage lives at `tests/harness-scenarios/packages/codex-sdk-mock-multi-turn/`. `tests/_mock_codex_sdk/register.mjs` calls `Module.register('./loader.mjs', import.meta.url)`; the loader rewrites the bare specifier `@openai/codex-sdk` to the deterministic mock at `tests/_mock_codex_sdk/sdk.mjs` so neither the real `@openai/codex-sdk` nor the `@openai/codex` CLI bin is spawned. The nightly workflow scopes `NODE_OPTIONS=--import file://.../register.mjs` (matching the ESM-only shape of the real package, same as `opencode_sdk`) to a dedicated step so the hook never leaks into the other scenarios; that step runs the scenario via `node bin/ad-evals.js run tests/harness-scenarios/packages/codex-sdk-mock-multi-turn`, which routes through `dir-walk.spawnScenario` (single-scenario bypass of `EVAL_ROOT`) since the scenario lives in the framework-owned tree.
+
+## Daemon-Lifecycle Providers
+
+Some `provider_kind`s need a long-lived child process for the duration of a single eval run. `openhands_agent_server` is the first such kind. It **bypasses `_node_bridge.js` entirely** — there is no entry in `_KIND_REGISTRY` for it. The lifecycle is owned by the CLI; the in-Promptfoo runtime just speaks REST + WebSocket to the daemon.
+
+Three pieces wire it together:
+
+1. **Resolver branch** — `scripts/framework/resolve-promptfoo-config.js` detects `provider_kind = "openhands_agent_server"` in a normalised tier and emits the wrapper provider URL `framework://openhands-agent-server-provider.js` (resolved against `FRAMEWORK_ROOT`) instead of the standard bridge URL. Consumer fields (`agent`, `openhands_config`, `model`) are preserved at the top level of `entry.config` — no `provider_options` bag.
+2. **Lifecycle module** — `scripts/framework/agent-server-lifecycle.js` exports `startAgentServerDaemon({ openhandsJsonPath, internals? })` and `stopAgentServerDaemon(handle)`. `start` allocates a free `127.0.0.1` port via `net.createServer().listen(0)`, spawns `uvx --with libtmux --with "openhands-tools==<pin>" --from "openhands-agent-server==<pin>" agent-server --host 127.0.0.1 --port <port>` as a detached process group, polls `/health` until the daemon is ready (default 30 s budget), and returns a handle `{ url, pid }`. A `ACTIVE_HANDLES` set enforces a single daemon per run; `stop` issues `SIGTERM` to the process group, waits ≤5 s, then `SIGKILL`. The `internals` parameter (`spawn`, `allocateFreePort`, `processKill`, `httpGet`) is the test seam — production passes `_defaultInternals`.
+3. **CLI hooks** — `bin/ad-evals.js`, after `runTierConfigValidation` and before `runPromptfooWithGuard`, calls `_anyTierUsesAgentServer(normalised)`; if true, it boots the daemon via the lifecycle module, mutates `process.env.OPENHANDS_SERVER_URL = handle.url`, logs `[ad-evals] agent-server ready on http://127.0.0.1:<port> (<ms>ms)`, then runs promptfoo. A `finally` block restores the prior `OPENHANDS_SERVER_URL` value and tears the daemon down.
+
+The wrapper provider (`scripts/framework/openhands-agent-server-provider.js`) speaks the documented OpenHands 1.21.x REST + WebSocket contract. It reads `OPENHANDS_SERVER_URL` from the env (non-empty string wins over `openhands.json:openhands_server_url`, which is now omitted from templates). Model precedence is `OPENHANDS_MODEL_OVERRIDE` (env) > `this.config.model` (resolver-injected) > `cfg.agent[agent].model` (openhands.json fallback). For manual debugging without the CLI, set `OPENHANDS_SERVER_URL` in the shell — the provider will speak to whatever 127.0.0.1 daemon you started by hand.
+
+Daemon-lifecycle kinds today: `openhands_agent_server`.
 
 ## Open Questions
 

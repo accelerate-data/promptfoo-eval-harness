@@ -54,3 +54,31 @@ extras = []
 env_allowlist = [
   "ANTHROPIC_API_KEY",
 ]
+
+[openhands_agent_server]
+# Daemon-mode wrapper provider — see scripts/framework/openhands-agent-server-provider.js.
+# The harness CLI (bin/ad-evals.js) auto-starts the daemon on a dynamic
+# 127.0.0.1 port and injects OPENHANDS_SERVER_URL into the promptfoo
+# subprocess env. The provider reads that env var before falling back
+# to openhands.json.
+version = "1.21.1"
+# Locks the openhands-tools companion package version. Source script
+# (templates/scripts/openhands-server.sh) ties the two together; do not
+# split them without verifying upstream compatibility.
+tools_version = "1.21.1"
+python = ">=3.12,<3.14"
+extras = []
+# LiteLLM provider keys the daemon child needs to reach model APIs.
+# OPENHANDS_SERVER_URL is set on the promptfoo subprocess by the CLI; it
+# is NOT forwarded into the daemon child env.
+env_allowlist = [
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "OPENROUTER_API_KEY",
+  "OPENCODE_API_KEY",
+  "GROQ_API_KEY",
+  "DEEPSEEK_API_KEY",
+  "OPENHANDS_API_KEY",
+  "OPENHANDS_MODEL_OVERRIDE",
+]
+startup_timeout_ms = 30000

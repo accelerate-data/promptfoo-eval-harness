@@ -102,6 +102,76 @@ describe('sdk-pins', () => {
     });
   });
 
+  describe('openhands_agent_server section', () => {
+    test('has required string fields', () => {
+      const { openhands_agent_server } = loadSdkPins();
+      assert.strictEqual(typeof openhands_agent_server.version, 'string', 'version must be string');
+      assert.match(openhands_agent_server.version, /^\d+\.\d+\.\d+$/, 'version must be semver');
+      assert.strictEqual(
+        typeof openhands_agent_server.tools_version,
+        'string',
+        'tools_version must be string',
+      );
+      assert.match(
+        openhands_agent_server.tools_version,
+        /^\d+\.\d+\.\d+$/,
+        'tools_version must be semver',
+      );
+      assert.strictEqual(typeof openhands_agent_server.python, 'string', 'python must be string');
+    });
+
+    test('has extras as array', () => {
+      const { openhands_agent_server } = loadSdkPins();
+      assert.ok(Array.isArray(openhands_agent_server.extras), 'extras must be array');
+    });
+
+    test('pins openhands-agent-server and tools at 1.21.1 (source script lockstep)', () => {
+      const { openhands_agent_server } = loadSdkPins();
+      assert.strictEqual(openhands_agent_server.version, '1.21.1');
+      assert.strictEqual(openhands_agent_server.tools_version, '1.21.1');
+    });
+
+    test('python constraint covers 3.12', () => {
+      const { openhands_agent_server } = loadSdkPins();
+      assert.match(openhands_agent_server.python, /3\.12/, 'python constraint must include 3.12');
+    });
+
+    test('env_allowlist is non-empty array of strings including LiteLLM provider keys', () => {
+      const { openhands_agent_server } = loadSdkPins();
+      assert.ok(Array.isArray(openhands_agent_server.env_allowlist), 'env_allowlist must be array');
+      assert.ok(openhands_agent_server.env_allowlist.length > 0, 'env_allowlist must not be empty');
+      for (const key of openhands_agent_server.env_allowlist) {
+        assert.strictEqual(typeof key, 'string', `env_allowlist entry must be string, got: ${key}`);
+      }
+      // LiteLLM provider keys the daemon child needs to reach model APIs.
+      for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENHANDS_MODEL_OVERRIDE']) {
+        assert.ok(
+          openhands_agent_server.env_allowlist.includes(key),
+          `openhands_agent_server env_allowlist must include ${key}`,
+        );
+      }
+      // OPENHANDS_SERVER_URL is injected on the promptfoo subprocess by the CLI;
+      // it must NOT be forwarded into the daemon child env.
+      assert.ok(
+        !openhands_agent_server.env_allowlist.includes('OPENHANDS_SERVER_URL'),
+        'OPENHANDS_SERVER_URL must NOT be in daemon-child env_allowlist',
+      );
+    });
+
+    test('startup_timeout_ms is a positive number', () => {
+      const { openhands_agent_server } = loadSdkPins();
+      assert.strictEqual(
+        typeof openhands_agent_server.startup_timeout_ms,
+        'number',
+        'startup_timeout_ms must be number',
+      );
+      assert.ok(
+        openhands_agent_server.startup_timeout_ms > 0,
+        'startup_timeout_ms must be positive',
+      );
+    });
+  });
+
   test('throws on missing file', () => {
     assert.throws(
       () => loadSdkPins('/nonexistent/path/sdk-pins.toml'),

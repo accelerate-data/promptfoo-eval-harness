@@ -199,6 +199,38 @@ passes through verbatim, and only `OPENHANDS_API_KEY` is consulted. The legacy m
 (omit `base_url`) still works for repos that resolve via `_MODEL_MAP` and the
 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` prefix routing.
 
+### Using `openhands_agent_server`
+
+`openhands_agent_server` is a wrapper-style provider that delegates execution to a long-lived `openhands-agent-server` daemon. The CLI owns the daemon's lifecycle — you never start, stop, or pin a port by hand.
+
+1. In `config/eval-tiers.toml`, choose `openhands_agent_server` for the tiers that should use it:
+
+   ```toml
+   [tiers.light]
+   providers = [
+     { provider_kind = "openhands_agent_server", model = "openai/gpt-4o-mini", agent = "eval_light", openhands_config = "openhands.json" },
+   ]
+   ```
+
+2. Add `openhands.json` next to `eval-tiers.toml` (use `templates/openhands.json` as a starting point). The `adapter` block is required and must include `agent_id`, `agent_entrypoint_file`, `agent_semantics`, and `eval_mode_preamble`. The `agent` map per tier carries `model`, `temperature`, `steps`, and `permission`. Do NOT set `openhands_server_url` — the CLI injects it.
+3. Confirm `uvx` is on `PATH`:
+
+   ```bash
+   ad-evals doctor
+   ```
+
+4. Run a smoke:
+
+   ```bash
+   ad-evals smoke
+   ```
+
+   You will see `[ad-evals] agent-server ready on http://127.0.0.1:<port> (<ms>ms)` in the log, then a normal Promptfoo eval table. When the run finishes the daemon is stopped (SIGTERM → 5 s → SIGKILL on the process group); no orphan processes.
+
+Model precedence (highest wins): `OPENHANDS_MODEL_OVERRIDE` env > the `model` field on the provider in `eval-tiers.toml` > `agent.<tier>.model` in `openhands.json`.
+
+For manual debugging without the CLI driver, start an `openhands-agent-server` instance on `127.0.0.1:<your-port>` by hand, then `export OPENHANDS_SERVER_URL=http://127.0.0.1:<your-port>` before invoking `promptfoo` directly. Non-empty values win over `openhands.json`; an empty string falls back to the JSON. The daemon binds `127.0.0.1` only — do NOT point this env var at a remote URL.
+
 ### Common failures
 
 | Symptom | Fix |

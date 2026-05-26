@@ -5,10 +5,16 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 
 const {
+  resolveConfigFile,
   resolveMultiProviderConfig,
+  resolveProviderId,
   BRIDGE_FILE_URL,
+  _isV1RawShape,
   _resetRunId,
 } = require('./resolve-promptfoo-config');
+const { FRAMEWORK_ROOT } = require('./roots');
+
+const AGENT_SERVER_FILE_URL = 'framework://openhands-agent-server-provider.js';
 
 const FIXTURES_DIR = path.join(__dirname, '..', '..', 'tests', 'fixtures');
 
@@ -191,6 +197,203 @@ describe('resolveMultiProviderConfig — v0 legacy compatibility', () => {
     for (const entry of result.providers) {
       assert.strictEqual(entry.id, BRIDGE_FILE_URL);
     }
+  });
+});
+
+describe('resolveMultiProviderConfig — openhands_agent_server routing', () => {
+  beforeEach(() => {
+    _resetRunId();
+  });
+
+  test('emits agent-server provider URL (not bridge) when provider_kind = openhands_agent_server', () => {
+    const tierConfig = {
+      version: 'v1',
+      default_tier: 'light',
+      tiers: {
+        light: {
+          providers: [
+            {
+              provider_kind: 'openhands_agent_server',
+              agent: 'eval_light',
+              openhands_config: 'openhands.json',
+              model: 'openai/gpt-4o-mini',
+            },
+          ],
+        },
+      },
+    };
+    const scenarios = makeScenarios(1);
+    const result = resolveMultiProviderConfig(tierConfig, scenarios, 'light', { runId: 'as-001' });
+
+    assert.strictEqual(result.providers.length, 1);
+    const entry = result.providers[0];
+    assert.strictEqual(entry.id, AGENT_SERVER_FILE_URL);
+    assert.notStrictEqual(entry.id, BRIDGE_FILE_URL, 'must NOT route through bridge');
+
+    // Consumer fields arrive at config TOP LEVEL — never under provider_options.
+    assert.strictEqual(entry.config.provider_kind, 'openhands_agent_server');
+    assert.strictEqual(entry.config.agent, 'eval_light');
+    assert.strictEqual(entry.config.openhands_config, 'openhands.json');
+    assert.strictEqual(entry.config.model, 'openai/gpt-4o-mini');
+    assert.strictEqual(entry.config.run_id, 'as-001');
+    assert.ok(entry.config.case_id && typeof entry.config.case_id === 'string');
+    assert.ok(!('provider_options' in entry.config), 'agent-server kind has no provider_options bag');
+  });
+
+  test('non-agent-server kinds still emit BRIDGE_FILE_URL', () => {
+    const tierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            { provider_kind: 'opencode_cli', model: 'anthropic/claude-haiku-4-5', label: 'oc' },
+          ],
+        },
+      },
+    };
+    const result = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light', { runId: 'as-002' });
+    assert.strictEqual(result.providers[0].id, BRIDGE_FILE_URL);
+  });
+
+  test('framework:// resolves agent-server URL to absolute file:// under FRAMEWORK_ROOT', () => {
+    const resolved = resolveProviderId(AGENT_SERVER_FILE_URL);
+    const expected = `file://${path.join(FRAMEWORK_ROOT, 'openhands-agent-server-provider.js')}`;
+    assert.strictEqual(resolved, expected);
+  });
+
+  test('T13 — public-API resolver routing reaches the provider module, not the bridge', () => {
+    const tierConfig = {
+      version: 'v1',
+      default_tier: 'light',
+      tiers: {
+        light: {
+          providers: [{
+            provider_kind: 'openhands_agent_server',
+            agent: 'eval_light',
+            openhands_config: 'openhands.json',
+            model: 'openai/gpt-4o-mini',
+          }],
+        },
+      },
+    };
+    const { providers } = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light', { runId: 't13' });
+    assert.strictEqual(providers.length, 1);
+    assert.strictEqual(providers[0].id, AGENT_SERVER_FILE_URL);
+    assert.strictEqual(providers[0].config.provider_kind, 'openhands_agent_server');
+    assert.strictEqual(providers[0].config.agent, 'eval_light');
+    assert.strictEqual(providers[0].config.model, 'openai/gpt-4o-mini');
+
+    // require-identity proof: resolver lands on the provider module, NOT the bridge.
+    const filePath = resolveProviderId(providers[0].id).replace(/^file:\/\//, '');
+    const providerMod = require(filePath);
+    const directMod = require('./openhands-agent-server-provider');
+    assert.strictEqual(providerMod, directMod, 'resolver must reach the openhands-agent-server-provider module');
+    assert.notStrictEqual(
+      path.resolve(filePath),
+      require.resolve('./_node_bridge'),
+      'resolver must NOT route agent-server through _node_bridge.js',
+    );
+  });
+});
+
+describe('resolveConfigFile — v1 materialize branch', () => {
+  beforeEach(() => {
+    _resetRunId();
+  });
+
+  const SMOKE_CONFIG = 'examples/harness-smoke/promptfooconfig.json';
+
+  test('_isV1RawShape detects version=v1, providers[] arrays, and rejects v0', () => {
+    assert.equal(_isV1RawShape({ version: 'v1', tiers: { light: { providers: [] } } }), true);
+    assert.equal(
+      _isV1RawShape({ tiers: { light: { providers: [{ provider_kind: 'opencode_cli' }] } } }),
+      true,
+    );
+    assert.equal(_isV1RawShape({ tiers: { light: { agent: 'eval_light' } } }), false);
+    assert.equal(_isV1RawShape(null), false);
+    assert.equal(_isV1RawShape([]), false);
+  });
+
+  test('v1 rawTierConfig with opencode_cli routes through BRIDGE_FILE_URL', () => {
+    const rawTierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            { provider_kind: 'opencode_cli', model: 'anthropic/claude-haiku-4-5', label: 'oc' },
+          ],
+        },
+      },
+    };
+    const resolved = resolveConfigFile(SMOKE_CONFIG, { rawTierConfig });
+
+    assert.equal(resolved.providers.length, 1);
+    assert.equal(resolved.providers[0].id, BRIDGE_FILE_URL);
+    assert.equal(resolved.providers[0].config.provider_kind, 'opencode_cli');
+    // Original consumer fields (tests, prompts, description) survive.
+    assert.equal(resolved.description, 'OpenCode harness smoke test.');
+    assert.ok(Array.isArray(resolved.tests) && resolved.tests.length === 1);
+    assert.ok(Array.isArray(resolved.prompts) && resolved.prompts.length === 1);
+  });
+
+  test('v1 with openhands_agent_server resolves framework:// to absolute file://', () => {
+    const rawTierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            {
+              provider_kind: 'openhands_agent_server',
+              agent: 'eval_light',
+              openhands_config: 'openhands.json',
+              model: 'openai/gpt-4o-mini',
+            },
+          ],
+        },
+      },
+    };
+    const resolved = resolveConfigFile(SMOKE_CONFIG, { rawTierConfig });
+
+    assert.equal(resolved.providers.length, 1);
+    const expectedUrl = `file://${path.join(FRAMEWORK_ROOT, 'openhands-agent-server-provider.js')}`;
+    assert.equal(resolved.providers[0].id, expectedUrl,
+      'framework:// must be resolved to absolute file:// before promptfoo sees it');
+    assert.equal(resolved.providers[0].config.provider_kind, 'openhands_agent_server');
+    assert.equal(resolved.providers[0].config.agent, 'eval_light');
+    assert.equal(resolved.providers[0].config.openhands_config, 'openhands.json');
+    assert.equal(resolved.providers[0].config.model, 'openai/gpt-4o-mini');
+  });
+
+  test('v1 collapses scenario fan-out (Phase 1) — N tier-providers = N entries regardless of tests[].length', () => {
+    const rawTierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            { provider_kind: 'opencode_cli', model: 'anthropic/claude-haiku-4-5', label: 'oc' },
+            { provider_kind: 'openhands_sdk', model: 'anthropic/claude-haiku-4-5', label: 'oh' },
+          ],
+        },
+      },
+    };
+    const resolved = resolveConfigFile(SMOKE_CONFIG, { rawTierConfig });
+    // 2 tier-providers × Phase-1-collapsed scenarios = 2 entries (NOT 2 × tests.length).
+    assert.equal(resolved.providers.length, 2,
+      'Phase 1 must collapse scenario fan-out; --compare semantics are Phase 2');
+  });
+
+  test('v1 throws on unknown eval_tier referenced by metadata', () => {
+    const rawTierConfig = {
+      version: 'v1',
+      tiers: {
+        standard: { providers: [{ provider_kind: 'opencode_cli', model: 'x', label: 'x' }] },
+      },
+    };
+    // SMOKE_CONFIG metadata.eval_tier = 'light', tier config only defines 'standard'.
+    assert.throws(
+      () => resolveConfigFile(SMOKE_CONFIG, { rawTierConfig }),
+      /unknown tier "light"/,
+    );
   });
 });
 

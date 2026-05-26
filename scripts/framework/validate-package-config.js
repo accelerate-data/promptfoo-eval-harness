@@ -102,7 +102,8 @@ function _err(errPath, expected, received, message) {
  * @param {object} kindRegistry
  * @param {object[]} errors - Array to push errors into
  */
-function _validateProvider(provider, basePath, kindRegistry, errors) {
+function _validateProvider(provider, basePath, kindRegistry, errors, opts = {}) {
+  const { evalRoot = null, extraKinds = [] } = opts;
   if (!provider || typeof provider !== 'object') {
     errors.push(_err(basePath, 'object', provider, `${basePath} must be an object`));
     return;
@@ -110,42 +111,46 @@ function _validateProvider(provider, basePath, kindRegistry, errors) {
 
   const kind = provider.provider_kind;
   const kindPath = `${basePath}.provider_kind`;
+  const validKinds = [...Object.keys(kindRegistry), ...extraKinds];
 
-  // Rule 1 — provider_kind must be in kindRegistry
+  // Rule 1 — provider_kind must be in validKinds (registry ∪ extraKinds)
   if (!kind || typeof kind !== 'string') {
-    errors.push(_err(kindPath, `one of [${Object.keys(kindRegistry).join(', ')}]`, kind,
+    errors.push(_err(kindPath, `one of [${validKinds.join(', ')}]`, kind,
       `provider_kind is required and must be a string`));
     return; // can't proceed without kind
   }
 
   if (RESERVED_KINDS.has(kind)) {
     errors.push(_err(kindPath,
-      `one of [${Object.keys(kindRegistry).join(', ')}]`,
+      `one of [${validKinds.join(', ')}]`,
       kind,
       `provider_kind '${kind}' is reserved for a future Phase and not yet registered in this harness release`,
     ));
     return;
   }
 
-  if (!Object.prototype.hasOwnProperty.call(kindRegistry, kind)) {
+  if (!validKinds.includes(kind)) {
     errors.push(_err(kindPath,
-      `one of [${Object.keys(kindRegistry).join(', ')}]`,
+      `one of [${validKinds.join(', ')}]`,
       kind,
-      `provider_kind '${kind}' is not registered in the harness KIND_REGISTRY`,
+      `provider_kind '${kind}' is not registered (kindRegistry + extraKinds)`,
     ));
     return;
   }
 
   const kindEntry = kindRegistry[kind];
+  const inExtra = extraKinds.includes(kind);
+  const needsModel = (kindEntry && kindEntry.mode === 'subprocess') || inExtra;
 
-  // Rule 2 — SDK kinds (mode === 'subprocess') require model
-  if (kindEntry && kindEntry.mode === 'subprocess') {
+  // Rule 2 — subprocess kinds (and extraKinds wrapper providers) require model
+  if (needsModel) {
     const model = provider.model;
     const modelPath = `${basePath}.model`;
 
     if (!model || typeof model !== 'string' || model.trim() === '') {
+      const reason = kindEntry && kindEntry.mode === 'subprocess' ? 'SDK/subprocess' : 'wrapper provider';
       errors.push(_err(modelPath, 'non-empty string', model,
-        `provider_kind '${kind}' (SDK/subprocess) requires a non-empty model field`));
+        `provider_kind '${kind}' (${reason}) requires a non-empty model field`));
     } else {
       // Attempt model-resolver validation if available (Phase 6+)
       const resolver = _loadModelResolver();
@@ -160,6 +165,49 @@ function _validateProvider(provider, basePath, kindRegistry, errors) {
           }
         }
       }
+    }
+  }
+
+  // Rule 3 — openhands_agent_server adapter block check (only when evalRoot supplied).
+  // Keeps validator file-system-free for unit tests that omit evalRoot.
+  if (kind === 'openhands_agent_server' && evalRoot) {
+    _validateAgentServerAdapter(provider, basePath, evalRoot, errors);
+  }
+}
+
+/**
+ * Open `<evalRoot>/<provider.openhands_config | 'openhands.json'>` and assert
+ * the adapter block is structurally correct. Does NOT check
+ * `microagent_install_path` (legitimate configs may omit microagents) and does
+ * NOT require `openhands_server_url` (URL is injected via env, Phase 06
+ * removes the static field).
+ */
+function _validateAgentServerAdapter(provider, basePath, evalRoot, errors) {
+  const fs = require('node:fs');
+  const ohRel = (provider && provider.openhands_config) || 'openhands.json';
+  const ohPath = path.resolve(evalRoot, ohRel);
+  if (!fs.existsSync(ohPath)) {
+    errors.push(_err(`${basePath}.openhands_config`, 'existing file', ohPath,
+      `openhands_config not found at ${ohPath}`));
+    return;
+  }
+  let cfg;
+  try { cfg = JSON.parse(fs.readFileSync(ohPath, 'utf8')); }
+  catch (e) {
+    errors.push(_err(ohPath, 'valid JSON', e.message, `invalid JSON in ${ohPath}: ${e.message}`));
+    return;
+  }
+  if (!cfg || !cfg.adapter || typeof cfg.adapter !== 'object') {
+    errors.push(_err(`${ohPath}.adapter`, 'object', cfg && cfg.adapter,
+      `adapter block required for openhands_agent_server`));
+    return;
+  }
+  const required = ['agent_id', 'agent_entrypoint_file', 'agent_semantics', 'eval_mode_preamble'];
+  for (const k of required) {
+    const v = cfg.adapter[k];
+    if (typeof v !== 'string' || v.trim() === '') {
+      errors.push(_err(`${ohPath}.adapter.${k}`, 'non-empty string', v,
+        `adapter.${k} required (non-empty string) for openhands_agent_server`));
     }
   }
 }
@@ -220,11 +268,22 @@ function _validateTurns(turns, basePath, providerKind, errors) {
  * Validate a package config object.
  *
  * @param {object} packageConfig - The parsed package/tier config object.
- * @param {{ kindRegistry: object }} opts
+ * @param {{
+ *   kindRegistry?: object,
+ *   evalRoot?: string|null,
+ *   extraKinds?: string[],
+ * }} opts
+ *   - `kindRegistry`: subprocess-kind table from `_node_bridge`. Defaults to {}.
+ *   - `evalRoot`: when provided, enables on-disk adapter checks for wrapper
+ *     kinds (currently `openhands_agent_server`). Omit to keep validation
+ *     file-system-free.
+ *   - `extraKinds`: wrapper-style provider kinds permitted in addition to
+ *     `Object.keys(kindRegistry)`. Used for kinds bypassing the bridge.
  * @returns {{ ok: true } | { ok: false, errors: Array<{path, expected, received, message}> }}
  */
-function validate(packageConfig, { kindRegistry = {} } = {}) {
+function validate(packageConfig, { kindRegistry = {}, evalRoot = null, extraKinds = [] } = {}) {
   const errors = [];
+  const providerOpts = { evalRoot, extraKinds };
 
   if (!packageConfig || typeof packageConfig !== 'object') {
     errors.push(_err('(root)', 'object', packageConfig, 'packageConfig must be a plain object'));
@@ -248,7 +307,7 @@ function validate(packageConfig, { kindRegistry = {} } = {}) {
     if (Array.isArray(providers)) {
       for (let pIdx = 0; pIdx < providers.length; pIdx++) {
         const providerPath = `tiers[${tIdx}].providers[${pIdx}]`;
-        _validateProvider(providers[pIdx], providerPath, kindRegistry, errors);
+        _validateProvider(providers[pIdx], providerPath, kindRegistry, errors, providerOpts);
       }
     }
 

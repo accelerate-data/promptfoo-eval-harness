@@ -1,0 +1,24 @@
+# Tier configuration for openhands-agent-server (daemon mode).
+# The harness CLI auto-starts the agent-server on a dynamically allocated
+# 127.0.0.1 port and injects OPENHANDS_SERVER_URL into the provider env.
+# See docs/setup.md for details.
+
+[tiers.eval_light]
+providers = [
+  { provider_kind = "openhands_agent_server", model = "openai/gpt-4o-mini", agent = "eval_light", openhands_config = "openhands.json" },
+]
+
+[tiers.eval_standard]
+providers = [
+  { provider_kind = "openhands_agent_server", model = "openai/gpt-4o-mini", agent = "eval_standard", openhands_config = "openhands.json" },
+]
+
+[tiers.eval_high]
+providers = [
+  { provider_kind = "openhands_agent_server", model = "anthropic/claude-haiku-4-5-20251001", agent = "eval_high", openhands_config = "openhands.json" },
+]
+
+[tiers.eval_x_high]
+providers = [
+  { provider_kind = "openhands_agent_server", model = "anthropic/claude-sonnet-4-6", agent = "eval_x_high", openhands_config = "openhands.json" },
+]
