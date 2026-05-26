@@ -310,7 +310,9 @@ class OpenhandsAgentServerProvider {
       adapter,
     }));
 
-    // LOCKSTEP NOTE: schema verified against live OpenHands 1.21.1 /openapi.json.
+    // LOCKSTEP NOTE: schema verified against live OpenHands 1.23.1 /openapi.json
+    // (pair-bumped from 1.21.1 on 2026-05-26 — the HTTP shape we rely on is
+    // byte-identical between the two).
     // StartConversationRequest: workspace (LocalWorkspace, Pydantic class name —
     // lowercased slugs like 'local' are rejected), agent { kind: 'Agent', llm },
     // initial_message, max_iterations at top level. Response field is `id`
@@ -354,11 +356,13 @@ class OpenhandsAgentServerProvider {
 
     const runDir = path.join(workspace, '.eval-run');
     try {
-      // LOCKSTEP NOTE: real OpenHands 1.21.1 event kinds: SystemPromptEvent,
-      // MessageEvent, ActionEvent, ObservationEvent, ConversationStateUpdateEvent,
-      // ConversationErrorEvent. Final answers ride on MessageEvent.llm_message.content
-      // (free-form assistant text) OR ActionEvent with action.kind === 'FinishAction'.
-      // Terminal: ConversationErrorEvent OR ConversationStateUpdateEvent with
+      // LOCKSTEP NOTE: real OpenHands 1.23.1 (pair-bumped from 1.21.1 on
+      // 2026-05-26 — event kinds preserved across the bump) event kinds:
+      // SystemPromptEvent, MessageEvent, ActionEvent, ObservationEvent,
+      // ConversationStateUpdateEvent, ConversationErrorEvent. Final answers
+      // ride on MessageEvent.llm_message.content (free-form assistant text)
+      // OR ActionEvent with action.kind === 'FinishAction'. Terminal:
+      // ConversationErrorEvent OR ConversationStateUpdateEvent with
       // key=execution_status and value in {error, finished, paused}.
       for await (const event of events) {
         trajectory.push(event);

@@ -10,7 +10,7 @@ const OpenhandsAgentServerProvider = require('./openhands-agent-server-provider'
 const { __private } = OpenhandsAgentServerProvider;
 
 const SAMPLE_OPENHANDS_CONFIG = {
-  openhands_version: '1.21.1',
+  openhands_version: '1.23.1',
   openhands_server_url: 'http://127.0.0.1:18745',
   openhands_server_startup_timeout_ms: 30000,
   litellm_provider: 'anthropic',
@@ -61,7 +61,7 @@ function fakeFinishStream(text) {
   };
 }
 
-test('OpenhandsAgentServerProvider posts the documented OpenHands 1.21.1 REST payload shape', async () => {
+test('OpenhandsAgentServerProvider posts the documented OpenHands 1.23.1 REST payload shape', async () => {
   const suite = makeSuite();
   suite.writeConfig();
   const calls = [];
@@ -121,7 +121,7 @@ test('OpenhandsAgentServerProvider writes provider.json + trajectory.json with a
     assert.equal(provJson.microagent_installed_path, null); // no entrypoint file → no install
     assert.equal(provJson.model, 'anthropic/claude-sonnet-4-6');
     assert.equal(provJson.litellm_provider, 'anthropic');
-    assert.equal(provJson.openhands_version, '1.21.1');
+    assert.equal(provJson.openhands_version, '1.23.1');
 
     const traj = JSON.parse(fs.readFileSync(path.join(suite.workspace, '.eval-run', 'trajectory.json'), 'utf8'));
     assert.equal(traj.length, 2);

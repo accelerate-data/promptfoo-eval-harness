@@ -61,11 +61,26 @@ env_allowlist = [
 # 127.0.0.1 port and injects OPENHANDS_SERVER_URL into the promptfoo
 # subprocess env. The provider reads that env var before falling back
 # to openhands.json.
-version = "1.21.1"
+# Bumped 2026-05-26 from 1.21.1 → 1.23.1. The 1.21.1 wheel declared an
+# unversioned `openhands-sdk` dependency, so uvx pulled the latest sdk
+# (1.23.x) at runtime → `ImportError: cannot import name 'AgentSettings'
+# from openhands.sdk.settings`. The HTTP/WS surface this provider relies
+# on (POST /api/conversations → `ConversationInfo.id`, WS
+# `/sockets/events/{conversation_id}`, MessageEvent / ActionEvent /
+# ConversationStateUpdateEvent / ConversationErrorEvent payloads) is
+# byte-identical between 1.21.1 and 1.23.1 — this is a pure version
+# refresh, not a provider refactor.
+version = "1.23.1"
 # Locks the openhands-tools companion package version. Source script
 # (templates/scripts/openhands-server.sh) ties the two together; do not
 # split them without verifying upstream compatibility.
-tools_version = "1.21.1"
+tools_version = "1.23.1"
+# Explicit openhands-sdk pin — agent-server-lifecycle.js feeds this into
+# `uvx --with openhands-sdk==<sdk_version>` so the sdk minor never drifts
+# ahead of the agent-server wheel (the 2026-05-26 root cause). Kept here
+# alongside `tools_version` so the lockstep contract test can assert all
+# three move together.
+sdk_version = "1.23.1"
 python = ">=3.12,<3.14"
 extras = []
 # LiteLLM provider keys the daemon child needs to reach model APIs.

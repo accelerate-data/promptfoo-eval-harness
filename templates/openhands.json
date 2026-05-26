@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "openhands_version": "1.21.1",
+  "openhands_version": "1.23.1",
   "litellm_provider": "anthropic",
   "adapter": {
     "agent_id": "my-plugin:my-agent",

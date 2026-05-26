@@ -1,5 +1,5 @@
 {
-  "openhands_version": "1.21.1",
+  "openhands_version": "1.23.1",
   "litellm_provider": "openai",
   "adapter": {
     "agent_id": "harness-smoke:eval-agent",

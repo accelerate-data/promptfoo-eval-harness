@@ -232,8 +232,15 @@ async function startAgentServerDaemon({ rootDir, evalRoot, logger, _internals } 
   let lastError = null;
   for (let attempt = 1; attempt <= 2; attempt++) {
     const port = await I.allocateFreePort();
+    // Lockstep pin order — sdk first so uvx resolves the wheel before
+    // the agent-server wheel layers on top. The explicit openhands-sdk
+    // pin is REQUIRED: the agent-server wheel declares its sdk dep with
+    // no version bound, so without this argv entry uvx pulls the latest
+    // sdk minor and the import surface drifts out from under the
+    // agent-server. See sdk-pins.js `sdk_version required` check.
     const argv = [
       '--with', 'libtmux',
+      '--with', `openhands-sdk==${pins.sdk_version}`,
       '--with', `openhands-tools==${pins.tools_version}`,
       '--from', `openhands-agent-server==${pins.version}`,
       'agent-server', '--host', '127.0.0.1', '--port', String(port),

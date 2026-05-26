@@ -153,8 +153,13 @@ describe('agent-server-lifecycle', () => {
         assert.strictEqual(spawnCalls[0].cmd, 'uvx');
         assert.deepStrictEqual(spawnCalls[0].argv, [
           '--with', 'libtmux',
-          '--with', 'openhands-tools==1.21.1',
-          '--from', 'openhands-agent-server==1.21.1',
+          // sdk pin must be present and must be listed before the
+          // agent-server `--from`, otherwise uvx may install a later sdk
+          // from the agent-server wheel's open-ended dep (root cause of
+          // the 2026-05-26 ImportError on AgentSettings).
+          '--with', 'openhands-sdk==1.23.1',
+          '--with', 'openhands-tools==1.23.1',
+          '--from', 'openhands-agent-server==1.23.1',
           'agent-server', '--host', '127.0.0.1', '--port', '54321',
         ]);
         assert.strictEqual(spawnCalls[0].opts.detached, true);

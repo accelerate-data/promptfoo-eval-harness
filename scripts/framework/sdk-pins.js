@@ -41,6 +41,14 @@ function loadSdkPins(configPath = SDK_PINS_PATH) {
   if (!openhands_agent_server.tools_version) {
     throw new Error('sdk-pins.toml [openhands_agent_server].tools_version required');
   }
+  // sdk_version is required so the spawn argv can pin openhands-sdk
+  // explicitly. Upstream agent-server wheels declare openhands-sdk with
+  // no version bound, so without this pin uvx pulls the latest sdk and
+  // can land on an incompatible minor (root cause of the 2026-05-26
+  // ImportError on AgentSettings).
+  if (!openhands_agent_server.sdk_version) {
+    throw new Error('sdk-pins.toml [openhands_agent_server].sdk_version required');
+  }
   if (!openhands_agent_server.python) {
     throw new Error('sdk-pins.toml [openhands_agent_server].python required');
   }

@@ -125,10 +125,30 @@ describe('sdk-pins', () => {
       assert.ok(Array.isArray(openhands_agent_server.extras), 'extras must be array');
     });
 
-    test('pins openhands-agent-server and tools at 1.21.1 (source script lockstep)', () => {
+    test('pins openhands-agent-server, sdk, and tools at 1.23.1 (lockstep trio)', () => {
       const { openhands_agent_server } = loadSdkPins();
-      assert.strictEqual(openhands_agent_server.version, '1.21.1');
-      assert.strictEqual(openhands_agent_server.tools_version, '1.21.1');
+      assert.strictEqual(openhands_agent_server.version, '1.23.1');
+      assert.strictEqual(openhands_agent_server.sdk_version, '1.23.1');
+      assert.strictEqual(openhands_agent_server.tools_version, '1.23.1');
+    });
+
+    test('sdk_version is a required semver string (root-cause guard for unpinned sdk)', () => {
+      // Regression guard for the 2026-05-26 ImportError: agent-server 1.21.1
+      // shipped with an unbound openhands-sdk dep; uvx pulled the latest
+      // 1.23.x sdk → AgentSettings was removed → crash. Bumping to 1.23.1
+      // is only half the fix; the spawn argv must also pin the sdk
+      // explicitly so future agent-server wheels can't drift again.
+      const { openhands_agent_server } = loadSdkPins();
+      assert.strictEqual(
+        typeof openhands_agent_server.sdk_version,
+        'string',
+        'sdk_version must be string',
+      );
+      assert.match(
+        openhands_agent_server.sdk_version,
+        /^\d+\.\d+\.\d+$/,
+        'sdk_version must be semver',
+      );
     });
 
     test('python constraint covers 3.12', () => {
