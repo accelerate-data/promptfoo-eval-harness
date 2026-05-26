@@ -639,9 +639,14 @@ class HarnessBridgeProvider {
     let attemptedInput = '';
 
     // Create per-case workspace and forward its path in cfg.options.workspace_dir (spec §7.3).
+    // Caller-supplied cfg.workspace_root wins (codex round-2 finding #1); otherwise auto-allocate
+    // a per-case mkdtemp. Existing call sites never pass workspace_root → bit-for-bit compatible.
     const runId = process.env.AD_EVALS_RUN_ID || '';
     const caseId = cfg.case_id || context?.vars?.case_id || '';
-    const workspaceDir = _ensureWorkspace(runId, caseId);
+    const workspaceDir =
+      typeof cfg.workspace_root === 'string' && cfg.workspace_root
+        ? cfg.workspace_root
+        : _ensureWorkspace(runId, caseId);
     // Thread the planned turn count through cfg.extra so providers can branch
     // on it at init() time (Phase 10 / VD-2174-9). Existing providers that
     // ignore cfg.extra.total_turns are unaffected.
@@ -803,9 +808,13 @@ class HarnessBridgeProvider {
       };
     }
 
+    // Caller-supplied cfg.workspace_root wins (codex round-2 finding #1); fall back to mkdtemp.
     const runId = process.env.AD_EVALS_RUN_ID || '';
     const caseId = cfg.case_id || context?.vars?.case_id || '';
-    const workspaceDir = _ensureWorkspace(runId, caseId);
+    const workspaceDir =
+      typeof cfg.workspace_root === 'string' && cfg.workspace_root
+        ? cfg.workspace_root
+        : _ensureWorkspace(runId, caseId);
     const cfgWithWorkspace = { ...cfg, workspace_root: workspaceDir };
 
     // Resolve + cache provider instance once per kind.
