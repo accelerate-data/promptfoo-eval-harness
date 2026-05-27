@@ -80,7 +80,7 @@ Each eval package lives under `tests/evals/packages/<package-name>/` and owns:
 - package-specific vars, fixtures, test cases, and assertions
 - exactly one `[smoke]` test case for execution validation
 
-Package configs must define `metadata.eval_tier` and must not define `providers`. Provider wiring is injected by `scripts/framework/resolve-promptfoo-config.js` from `config/eval-tiers.toml`.
+Package configs must define `metadata.eval_tier` and must not define `providers`. Provider wiring is injected by `scripts/framework/resolve-promptfoo-config.js` from `config/eval-tiers.toml`. This holds for multi-turn packages too: a v0-tier package whose tests declare `vars.turns` auto-routes to the SDK bridge using the top-level `[multiturn]` block (the single-turn tier CLI provider cannot drive `vars.turns`), so it still declares only `metadata.eval_tier`. See `docs/setup.md` → "Tier-driven multi-turn".
 
 The eval-local `tests/evals/eval-map.json` records package ownership, commands, directories, framework files, and the package catalog. Deterministic tests assert discovered package configs and `eval-map.json` stay aligned.
 

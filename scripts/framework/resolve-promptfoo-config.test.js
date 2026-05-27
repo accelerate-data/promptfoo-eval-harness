@@ -7,9 +7,11 @@ const path = require('node:path');
 const {
   resolveConfigFile,
   resolveMultiProviderConfig,
+  resolveMultiTurnProviderBlock,
   resolveProviderId,
   BRIDGE_FILE_URL,
   _isV1RawShape,
+  _hasMultiTurnTest,
   _resetRunId,
 } = require('./resolve-promptfoo-config');
 const { FRAMEWORK_ROOT } = require('./roots');
@@ -393,6 +395,111 @@ describe('resolveConfigFile — v1 materialize branch', () => {
     assert.throws(
       () => resolveConfigFile(SMOKE_CONFIG, { rawTierConfig }),
       /unknown tier "light"/,
+    );
+  });
+});
+
+describe('multi-turn auto-route — v0 tier with vars.turns', () => {
+  const MULTITURN_CONFIG = 'tests/fixtures/multiturn-package-config.json';
+
+  function v0RawTier(extra = {}) {
+    return {
+      runtime: {
+        provider_id: 'file://scripts/framework/opencode-cli-provider.js',
+        opencode_config: 'opencode.json',
+        project_dir: '../..',
+      },
+      tiers: {
+        light: { agent: 'eval_light' },
+        standard: { agent: 'eval_standard' },
+        high: { agent: 'eval_high' },
+        x_high: { agent: 'eval_x_high' },
+      },
+      ...extra,
+    };
+  }
+
+  test('_hasMultiTurnTest detects vars.turns in tests[] (string + array) and defaultTest', () => {
+    assert.equal(_hasMultiTurnTest({ tests: [{ vars: { turns: '["a","b"]' } }] }), true);
+    assert.equal(_hasMultiTurnTest({ tests: [{ vars: { turns: ['a', 'b'] } }] }), true);
+    assert.equal(_hasMultiTurnTest({ defaultTest: { vars: { turns: '["a"]' } } }), true);
+    // negatives — no turns, empty turns, missing vars, bad shapes
+    assert.equal(_hasMultiTurnTest({ tests: [{ vars: { prompt: 'x' } }] }), false);
+    assert.equal(_hasMultiTurnTest({ tests: [{ vars: { turns: '   ' } }] }), false);
+    assert.equal(_hasMultiTurnTest({ tests: [{ vars: { turns: [] } }] }), false);
+    assert.equal(_hasMultiTurnTest({ tests: [] }), false);
+    assert.equal(_hasMultiTurnTest(null), false);
+  });
+
+  test('resolveMultiTurnProviderBlock builds an opencode_sdk bridge block (extra.opencode_agent)', () => {
+    const block = resolveMultiTurnProviderBlock(
+      v0RawTier({
+        multiturn: {
+          provider_kind: 'opencode_sdk',
+          model: 'opencode-go/qwen3.5-plus',
+          opencode_agent: 'build',
+        },
+      }),
+    );
+    assert.equal(block.id, BRIDGE_FILE_URL);
+    assert.equal(block.label, 'opencode_sdk/opencode-go/qwen3.5-plus');
+    assert.equal(block.config.provider_kind, 'opencode_sdk');
+    assert.equal(block.config.model, 'opencode-go/qwen3.5-plus');
+    assert.deepEqual(block.config.extra, { opencode_agent: 'build' });
+    assert.ok(!('provider_options' in block.config), 'fields land at config top level');
+  });
+
+  test('resolveMultiTurnProviderBlock honors an explicit label and openhands_sdk agent', () => {
+    const block = resolveMultiTurnProviderBlock(
+      v0RawTier({
+        multiturn: {
+          provider_kind: 'openhands_sdk',
+          model: 'openai/gpt-4o-mini',
+          agent: 'eval_light',
+          label: 'oh-mini',
+        },
+      }),
+    );
+    assert.equal(block.label, 'oh-mini');
+    assert.equal(block.config.provider_label, 'oh-mini');
+    assert.equal(block.config.agent, 'eval_light');
+  });
+
+  test('resolveMultiTurnProviderBlock throws when [multiturn] is missing or malformed', () => {
+    assert.throws(() => resolveMultiTurnProviderBlock(v0RawTier()), /no\s+\[multiturn\] block/);
+    assert.throws(
+      () => resolveMultiTurnProviderBlock(v0RawTier({ multiturn: { model: 'x' } })),
+      /provider_kind is required/,
+    );
+    assert.throws(
+      () => resolveMultiTurnProviderBlock(v0RawTier({ multiturn: { provider_kind: 'opencode_sdk' } })),
+      /model is required/,
+    );
+  });
+
+  test('resolveConfigFile auto-routes a v0 multi-turn package to the bridge', () => {
+    const rawTierConfig = v0RawTier({
+      multiturn: {
+        provider_kind: 'opencode_sdk',
+        model: 'opencode-go/qwen3.5-plus',
+        opencode_agent: 'build',
+      },
+    });
+    const resolved = resolveConfigFile(MULTITURN_CONFIG, { rawTierConfig });
+
+    assert.equal(resolved.providers.length, 1);
+    assert.equal(resolved.providers[0].id, BRIDGE_FILE_URL);
+    assert.equal(resolved.providers[0].config.provider_kind, 'opencode_sdk');
+    assert.deepEqual(resolved.providers[0].config.extra, { opencode_agent: 'build' });
+    // Consumer tests/prompts survive unchanged.
+    assert.ok(Array.isArray(resolved.tests) && resolved.tests.length === 1);
+    assert.ok(_hasMultiTurnTest(resolved), 'vars.turns must survive into the resolved config');
+  });
+
+  test('resolveConfigFile throws a clear error when a multi-turn package has no [multiturn] block', () => {
+    assert.throws(
+      () => resolveConfigFile(MULTITURN_CONFIG, { rawTierConfig: v0RawTier() }),
+      /declares a multi-turn test.*no\s+\[multiturn\] block/s,
     );
   });
 });

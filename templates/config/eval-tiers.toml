@@ -18,3 +18,13 @@ agent = "eval_high"
 
 [tiers.x_high]
 agent = "eval_x_high"
+
+# Optional. A package that declares a multi-turn test (vars.turns) auto-routes
+# to the SDK bridge using this block, so it needs only metadata.eval_tier — no
+# package-local providers block. The tier CLI provider is single-turn and cannot
+# drive vars.turns. provider_kind must be an SDK kind (opencode_sdk,
+# openhands_sdk, codex_sdk, claude_agent_sdk). See docs/setup.md.
+[multiturn]
+provider_kind = "opencode_sdk"
+model = "opencode-go/qwen3.5-plus"
+opencode_agent = "build"

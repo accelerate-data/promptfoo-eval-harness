@@ -562,6 +562,35 @@ joins responses with `\n---\n`. Each turn shares the provider's
 conversation state (Python kinds reuse the same `LocalConversation`;
 Node kinds reuse the same SDK client instance).
 
+#### Tier-driven multi-turn (no package-local providers block)
+
+The tier CLI provider (`opencode_cli` via `[runtime]`) is single-turn —
+it ignores `vars.turns`. A package that declares `eval_tier` but needs
+multi-turn would otherwise have to pin its own `providers` block
+pointing at the bridge. Instead, declare a top-level `[multiturn]` table
+in `eval-tiers.toml`:
+
+```toml
+[multiturn]
+provider_kind = "opencode_sdk"          # any SDK kind, not opencode_cli
+model = "opencode-go/qwen3.5-plus"
+opencode_agent = "build"                # opencode_sdk: extra.opencode_agent
+# agent = "eval_light"                   # opencode_sdk fallback only — ignored by openhands_sdk / codex_sdk
+# label = "opencode-sdk/qwen3.5-plus"    # optional; defaults to "<kind>/<model>"
+```
+
+When `resolveConfigFile` sees a package whose tests include `vars.turns`
+and whose tier config is the v0 shape (`tiers.<name>.agent`), it emits a
+single bridge provider built from `[multiturn]` — so the package config
+needs only `metadata.eval_tier`, never a `providers` block. Packages
+without a multi-turn test keep routing through the tier CLI provider
+untouched. If a package declares `vars.turns` but `[multiturn]` is
+missing, the resolver fails fast with a message pointing here.
+
+This is the recommended path: `ad-evals run packages/<pkg>` materializes
+the bridge provider and honors `vars.turns` directly — no `--filter`
+gymnastics or direct `promptfoo` invocation required.
+
 #### Auto-reply mode (claude-agent-sdk wrapper only)
 
 When the Claude SDK emits an `AskUserQuestion` mid-turn, the

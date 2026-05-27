@@ -75,6 +75,86 @@ function _readRawTierConfig(configPath = TIER_CONFIG_PATH, { fsImpl = fs } = {})
   return parseToml(fsImpl.readFileSync(configPath, 'utf8'));
 }
 
+/**
+ * True when a single Promptfoo test declares a multi-turn sequence (vars.turns).
+ * Accepts the JSON-encoded string form (what consumers write) and the legacy
+ * JS-array form.
+ *
+ * @param {object} testObj
+ * @returns {boolean}
+ */
+function _hasTurnsVar(testObj) {
+  const turns = testObj && testObj.vars && testObj.vars.turns;
+  if (Array.isArray(turns)) return turns.length > 0;
+  return typeof turns === 'string' && turns.trim().length > 0;
+}
+
+/**
+ * True when a parsed config declares ANY multi-turn test (in tests[] or
+ * defaultTest). Multi-turn needs the persistent SDK session in _node_bridge.js,
+ * which the v0 CLI provider cannot drive — so the resolver auto-routes such a
+ * package through the bridge using the [multiturn] block (see
+ * resolveMultiTurnProviderBlock).
+ *
+ * @param {object} parsed - Parsed promptfooconfig.
+ * @returns {boolean}
+ */
+function _hasMultiTurnTest(parsed) {
+  if (!parsed || typeof parsed !== 'object') return false;
+  if (_hasTurnsVar(parsed.defaultTest)) return true;
+  if (Array.isArray(parsed.tests)) return parsed.tests.some(_hasTurnsVar);
+  return false;
+}
+
+/**
+ * Build a single bridge provider block from the top-level [multiturn] table of
+ * eval-tiers.toml. Emitted in place of the v0 CLI provider when a package has a
+ * multi-turn test, so the package config needs no package-local providers block
+ * — declaring metadata.eval_tier is enough.
+ *
+ * Fields land at config TOP LEVEL because _node_bridge.js#parseProviderConfig
+ * reads them directly (it only strips Promptfoo's injected basePath). The shape
+ * mirrors a hand-written opencode_sdk/openhands_sdk providers block.
+ *
+ * @param {object} rawTier - Raw tier config (TOML/JSON); may carry .multiturn.
+ * @returns {{ id: string, label: string, config: object }}
+ * @throws if [multiturn] is missing or malformed.
+ */
+function resolveMultiTurnProviderBlock(rawTier) {
+  const mt = rawTier && rawTier.multiturn;
+  if (!mt || typeof mt !== 'object' || Array.isArray(mt)) {
+    throw new Error(
+      'Config declares a multi-turn test (vars.turns) but config/eval-tiers.toml has no ' +
+        '[multiturn] block. Multi-turn needs the SDK bridge, which the tier CLI provider ' +
+        'cannot drive — add a [multiturn] table with provider_kind and model (see docs/setup.md).',
+    );
+  }
+  if (!mt.provider_kind || typeof mt.provider_kind !== 'string') {
+    throw new Error('[multiturn].provider_kind is required (e.g. "opencode_sdk")');
+  }
+  if (!mt.model || typeof mt.model !== 'string') {
+    throw new Error('[multiturn].model is required (e.g. "opencode-go/qwen3.5-plus")');
+  }
+
+  const label = mt.label || `${mt.provider_kind}/${mt.model}`;
+  const config = {
+    provider_kind: mt.provider_kind,
+    provider_label: label,
+    model: mt.model,
+  };
+  // opencode_sdk picks its agent from extra.opencode_agent, falling back to a
+  // top-level `agent`. Python subprocess SDK kinds (openhands_sdk, codex_sdk)
+  // build their own SDK agent and their ProviderConfig has no `agent` field, so
+  // a top-level `agent` is silently dropped for those — it only affects opencode_sdk.
+  if (mt.opencode_agent) {
+    config.extra = { opencode_agent: mt.opencode_agent };
+  }
+  if (mt.agent) {
+    config.agent = mt.agent;
+  }
+  return { id: BRIDGE_FILE_URL, label, config };
+}
+
 function _isV1RawShape(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
   if (raw.version === 'v1') return true;
@@ -112,6 +192,16 @@ function resolveConfigFile(relativePath, { rawTierConfig = null } = {}) {
       id: resolveProviderId(p.id),
     }));
     return { ...rewritten, providers };
+  }
+
+  // v0 tier shape. A package may still need multi-turn (vars.turns), which the
+  // tier CLI provider cannot drive — auto-route it through the SDK bridge using
+  // the [multiturn] block, so the package needs no package-local providers.
+  if (_hasMultiTurnTest(parsed)) {
+    return {
+      ...rewritten,
+      providers: [resolveMultiTurnProviderBlock(rawTier)],
+    };
   }
 
   return {
@@ -370,8 +460,10 @@ module.exports = {
   resolveProviderId,
   writeResolvedConfig,
   resolveMultiProviderConfig,
+  resolveMultiTurnProviderBlock,
   getRunId,
   _resetRunId,
   _isV1RawShape,
+  _hasMultiTurnTest,
   _readRawTierConfig,
 };

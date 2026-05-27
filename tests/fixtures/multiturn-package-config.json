@@ -1,0 +1,14 @@
+{
+  "description": "Multi-turn fixture: a v0 package that declares vars.turns and must auto-route to the SDK bridge.",
+  "metadata": { "eval_tier": "light" },
+  "prompts": ["{{prompt}}"],
+  "tests": [
+    {
+      "vars": {
+        "prompt": "fallback single-turn prompt",
+        "turns": "[\"first turn\", \"second turn\"]"
+      },
+      "assert": []
+    }
+  ]
+}
