@@ -4,31 +4,27 @@ const path = require('node:path');
 
 const {
   TMP_ROOT,
+  BRIDGE_FILE_URL,
   resolveConfigFile,
   resolveProviderId,
   writeResolvedConfig,
 } = require('./framework/resolve-promptfoo-config');
 
-test('resolveConfigFile materializes an opencode provider from metadata.eval_tier', () => {
+test('resolveConfigFile materializes the default openhands_sdk bridge provider from metadata.eval_tier', () => {
   const resolved = resolveConfigFile('packages/harness-smoke/promptfooconfig.json');
 
-  assert.equal(
-    resolved.providers[0].id,
-    `file://${path.join(path.dirname(TMP_ROOT), '..', 'scripts', 'framework', 'opencode-cli-provider.js')}`,
-  );
-  assert.equal(resolved.providers[0].config.agent, 'eval_light');
-  assert.equal(resolved.providers[0].config.format, 'default');
-  assert.equal(resolved.providers[0].config.log_level, 'ERROR');
-  assert.equal(resolved.providers[0].config.print_logs, false);
-  assert.equal(resolved.providers[0].config.empty_output_retries, 1);
-  assert.match(resolved.providers[0].config.opencode_config, /opencode\.json$/);
-  assert.equal(resolved.providers[0].config.project_dir, path.resolve(__dirname, '..', '..', '..'));
-  assert.equal('max_turns' in resolved.providers[0].config, false);
-  assert.equal('provider_id' in resolved.providers[0].config, false);
-  assert.equal('tools' in resolved.providers[0].config, false);
-  assert.equal(resolved.providers[0].config.model, undefined);
-  assert.equal(resolved.providers[0].config.bootstrap_prompt, undefined);
-  assert.equal(resolved.providers[0].config.capture_on_failure, undefined);
+  // The shipped config/eval-tiers.toml is v1 and defaults every tier to
+  // openhands_sdk, so the resolver emits a single bridge provider (not the
+  // legacy opencode_cli block). See config/eval-tiers.toml.
+  assert.equal(resolved.providers[0].id, BRIDGE_FILE_URL);
+  assert.equal(resolved.providers[0].label, 'openhands-sdk/gpt-4o-mini');
+  assert.equal(resolved.providers[0].config.provider_kind, 'openhands_sdk');
+  assert.equal(resolved.providers[0].config.model, 'openai/gpt-4o-mini');
+  assert.equal(resolved.providers[0].config.provider_label, 'openhands-sdk/gpt-4o-mini');
+  assert.equal(typeof resolved.providers[0].config.run_id, 'string');
+  assert.match(resolved.providers[0].config.case_id, /:light:p0:s0$/);
+  assert.equal('agent' in resolved.providers[0].config, false);
+  assert.equal('opencode_config' in resolved.providers[0].config, false);
   assert.match(resolved.prompts[0], /harness-smoke/);
 });
 
@@ -73,7 +69,8 @@ test('writeResolvedConfig writes suite-owned resolved configs only under .tmp', 
   ]);
   assert.equal(calls[2][0], 'write');
   assert.equal(calls[2][1], path.join(TMP_ROOT, 'packages', 'harness-smoke', 'promptfooconfig.json'));
-  assert.match(calls[2][2], /file:\/\/.*\/scripts\/framework\/opencode-cli-provider\.js/);
+  assert.match(calls[2][2], /file:\/\/.*\/scripts\/framework\/_node_bridge\.js/);
+  assert.match(calls[2][2], /provider_kind: openhands_sdk/);
   assert.equal(calls[2][3], 'utf8');
 });
 

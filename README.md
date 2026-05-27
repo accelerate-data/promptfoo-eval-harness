@@ -10,6 +10,12 @@ All providers route through the single Promptfoo bridge
 `file://scripts/framework/_node_bridge.js`. Set `provider_kind` in the
 provider `config:` block to select a provider.
 
+The shipped tier config (`config/eval-tiers.toml`) defaults every tier to
+`openhands_sdk`. Provider selection is centralized there: the framework
+overrides any package-local `providers` block with the tier mapping, so
+switch providers by editing the tier in your own `eval-tiers.toml`, not a
+package.
+
 | `provider_kind` | Status | Model alias examples | Notes |
 | --- | --- | --- | --- |
 | `opencode_cli` | stable | `opencode-mock`, `opencode-anthropic` | In-process; requires `opencode` binary on `PATH`. |

@@ -1,10 +1,10 @@
 {
-  "description": "OpenCode harness smoke test.",
+  "description": "Harness smoke test (default provider: openhands_sdk).",
   "metadata": {
     "eval_tier": "light"
   },
   "prompts": [
-    "Return JSON only: {\"scenario\":\"harness-smoke\",\"ok\":true,\"failures\":[]}"
+    "Reply with this exact JSON object as plain text only. Do NOT call any tools — no finish, no think, no file, shell, or browser tools. Your entire response must be the raw JSON and nothing else: {\"scenario\":\"harness-smoke\",\"ok\":true,\"failures\":[]}"
   ],
   "tests": [
     {

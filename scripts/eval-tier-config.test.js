@@ -3,11 +3,13 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { parse } = require('smol-toml');
 
 const {
   CONFIG_PATH,
   loadEvalTierConfig,
   resolveEvalTier,
+  parseTierConfig,
 } = require('./framework/eval-tier-config');
 
 const AGENT_PERMISSION = {
@@ -21,39 +23,134 @@ const AGENT_PERMISSION = {
   webfetch: 'deny',
 };
 
-test('loadEvalTierConfig returns required suite tiers and OpenCode agents', () => {
-  const config = loadEvalTierConfig();
+// The shipped config/eval-tiers.toml is now v1 (openhands_sdk default), so the
+// v0 loader (loadEvalTierConfig / resolveEvalTier — still used for legacy v0
+// consumer configs via resolveProviderBlock) is exercised against a temp v0
+// fixture rather than the shipped config.
+const V0_AGENTS = {
+  eval_light: {
+    description: 'Light eval agent.',
+    mode: 'primary',
+    model: 'opencode-go/minimax-m2.7',
+    temperature: 0.1,
+    steps: 60,
+    permission: AGENT_PERMISSION,
+  },
+  eval_standard: {
+    description: 'Standard eval agent.',
+    mode: 'primary',
+    model: 'opencode-go/minimax-m2.7',
+    temperature: 0.1,
+    steps: 100,
+    permission: AGENT_PERMISSION,
+  },
+  eval_high: {
+    description: 'High eval agent.',
+    mode: 'primary',
+    model: 'opencode-go/minimax-m2.7',
+    temperature: 0.1,
+    steps: 120,
+    permission: AGENT_PERMISSION,
+  },
+  eval_x_high: {
+    description: 'Extra high eval agent.',
+    mode: 'primary',
+    model: 'opencode-go/minimax-m2.7',
+    temperature: 0.1,
+    steps: 200,
+    permission: AGENT_PERMISSION,
+  },
+};
 
-  assert.equal(config.runtime.providerId, 'file://scripts/framework/opencode-cli-provider.js');
-  assert.equal(config.runtime.opencodeConfig, path.resolve(path.dirname(CONFIG_PATH), '..', 'opencode.json'));
-  assert.equal(config.runtime.projectDir, path.resolve(path.dirname(CONFIG_PATH), '..', '..', '..'));
-  assert.equal(config.runtime.format, 'default');
-  assert.equal(config.runtime.logLevel, 'ERROR');
-  assert.equal(config.runtime.printLogs, false);
-  assert.equal(config.runtime.emptyOutputRetries, 1);
+function writeV0Config(tempRoot) {
+  fs.writeFileSync(
+    path.join(tempRoot, 'opencode.json'),
+    JSON.stringify({ agent: V0_AGENTS }, null, 2),
+    'utf8',
+  );
+  const configPath = path.join(tempRoot, 'eval-tiers.toml');
+  fs.writeFileSync(configPath, `
+[runtime]
+provider_id = "file://scripts/framework/opencode-cli-provider.js"
+opencode_config = "opencode.json"
+project_dir = "."
+format = "default"
+log_level = "ERROR"
+print_logs = false
+empty_output_retries = 1
+
+[tiers.light]
+agent = "eval_light"
+
+[tiers.standard]
+agent = "eval_standard"
+
+[tiers.high]
+agent = "eval_high"
+
+[tiers.x_high]
+agent = "eval_x_high"
+`.trimStart(), 'utf8');
+  return configPath;
+}
+
+test('shipped eval-tiers.toml is v1 and defaults every tier to openhands_sdk', () => {
+  const parsed = parseTierConfig(parse(fs.readFileSync(CONFIG_PATH, 'utf8')), CONFIG_PATH);
+
+  assert.equal(parsed.version, 'v1');
   assert.deepEqual(
-    Object.keys(config.tiers).sort(),
+    Object.keys(parsed.tiers).sort(),
     ['high', 'light', 'standard', 'x_high'],
   );
-  assert.deepEqual(config.tiers.light, { agent: 'eval_light' });
-  assert.deepEqual(config.tiers.standard, { agent: 'eval_standard' });
-  assert.equal(config.agents.eval_light.model, 'opencode-go/minimax-m2.7');
-  assert.equal(config.agents.eval_light.temperature, 0.1);
-  assert.equal(config.agents.eval_light.steps, 60);
-  assert.deepEqual(config.agents.eval_light.permission, AGENT_PERMISSION);
+  for (const [tierName, tier] of Object.entries(parsed.tiers)) {
+    assert.equal(tier.providers[0].provider_kind, 'openhands_sdk', `tier ${tierName}`);
+    assert.equal(tier.providers[0].model, 'openai/gpt-4o-mini', `tier ${tierName}`);
+  }
+});
+
+test('loadEvalTierConfig loads a v0 config tiers and OpenCode agents', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'eval-tier-config-'));
+  try {
+    const config = loadEvalTierConfig(writeV0Config(tempRoot));
+
+    assert.equal(config.runtime.providerId, 'file://scripts/framework/opencode-cli-provider.js');
+    assert.equal(config.runtime.opencodeConfig, path.join(tempRoot, 'opencode.json'));
+    assert.equal(config.runtime.projectDir, tempRoot);
+    assert.equal(config.runtime.format, 'default');
+    assert.equal(config.runtime.logLevel, 'ERROR');
+    assert.equal(config.runtime.printLogs, false);
+    assert.equal(config.runtime.emptyOutputRetries, 1);
+    assert.deepEqual(
+      Object.keys(config.tiers).sort(),
+      ['high', 'light', 'standard', 'x_high'],
+    );
+    assert.deepEqual(config.tiers.light, { agent: 'eval_light' });
+    assert.deepEqual(config.tiers.standard, { agent: 'eval_standard' });
+    assert.equal(config.agents.eval_light.model, 'opencode-go/minimax-m2.7');
+    assert.equal(config.agents.eval_light.temperature, 0.1);
+    assert.equal(config.agents.eval_light.steps, 60);
+    assert.deepEqual(config.agents.eval_light.permission, AGENT_PERMISSION);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('resolveEvalTier returns the expected OpenCode agent', () => {
-  const config = loadEvalTierConfig();
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'eval-tier-config-'));
+  try {
+    const config = loadEvalTierConfig(writeV0Config(tempRoot));
 
-  assert.equal(resolveEvalTier(config, 'light').agent, 'eval_light');
-  assert.equal(resolveEvalTier(config, 'standard').agent, 'eval_standard');
-  assert.equal(resolveEvalTier(config, 'high').agent, 'eval_high');
-  assert.equal(resolveEvalTier(config, 'x_high').agent, 'eval_x_high');
+    assert.equal(resolveEvalTier(config, 'light').agent, 'eval_light');
+    assert.equal(resolveEvalTier(config, 'standard').agent, 'eval_standard');
+    assert.equal(resolveEvalTier(config, 'high').agent, 'eval_high');
+    assert.equal(resolveEvalTier(config, 'x_high').agent, 'eval_x_high');
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('resolveEvalTier rejects unknown tiers', () => {
-  const config = loadEvalTierConfig();
+  const config = { tiers: { light: { agent: 'eval_light' } } };
 
   assert.throws(() => resolveEvalTier(config, 'missing'), /Unknown eval tier: missing/);
 });

@@ -178,7 +178,10 @@ Create `tests/evals/packages/my-feature/prompt.txt` with your prompt text.
 
 - `metadata.eval_tier` is required. Valid values: `light`, `standard`, `high`, `x_high`.
 - Every package must have exactly one test whose description starts with `[smoke]`.
-- Do not declare a `providers` block. The framework injects it from `eval-tiers.toml`.
+- Do not declare a `providers` block. The framework injects it from `eval-tiers.toml`
+  — and **overrides any package-local `providers` block you declare** (the tier default
+  always wins, single-turn and multi-turn alike). Provider selection is centralized in
+  `eval-tiers.toml`; switch providers at the tier level, not per package.
 
 ---
 
@@ -446,9 +449,17 @@ delegate to the underlying transport.
 
 #### Switching providers across runs
 
+> **Provider selection lives in `eval-tiers.toml`, not in packages.** Under a v1
+> tier config the framework **overrides any package-local `providers` block**
+> with the tier default — an inline `providers` block (single-turn *or*
+> multi-turn) is silently replaced, so editing a package's `providers` has no
+> effect. Switching providers therefore means swapping the tier config, as
+> below.
+
 Consumers commonly run the same package set against multiple providers.
 Pattern from the data-engineering team: keep `config/eval-tiers.toml`
-pointed at the primary provider (opencode-cli for daily work) and add
+pointed at your primary provider (the harness now ships `openhands_sdk`
+as the default tier provider) and add
 sibling configs (`eval-tiers-sdk.toml`, `eval-tiers-codex.toml`,
 `eval-tiers-openhands.toml`) plus thin bash wrappers that backup → swap
 → run → restore on exit:

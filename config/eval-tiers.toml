@@ -1,3 +1,16 @@
+# Default tier policy: openhands_sdk for BOTH single-turn and multi-turn.
+# This is a v1 config (tiers.<name>.providers[]). Under v1 the tier providers[]
+# drive provider selection for every package — single-turn and multi-turn alike
+# route through the SDK bridge — so there is no separate [multiturn] block and
+# [runtime].provider_id is NOT used for provider selection.
+#
+# NOTE: openhands_sdk needs OPENAI_API_KEY (model openai/*) + the uv/Python 3.12
+# toolchain. Single-turn prompts MUST instruct "plain text only, no tools" or the
+# model wraps its reply in finish/think tool calls and the harness sees empty
+# output. Per-tier models can differ; default is gpt-4o-mini across all tiers.
+version = "v1"
+default_tier = "light"
+
 [runtime]
 provider_id = "file://scripts/framework/opencode-cli-provider.js"
 opencode_config = "opencode.json"
@@ -8,23 +21,13 @@ print_logs = false
 empty_output_retries = 1
 
 [tiers.light]
-agent = "eval_light"
+providers = [{ provider_kind = "openhands_sdk", model = "openai/gpt-4o-mini", label = "openhands-sdk/gpt-4o-mini" }]
 
 [tiers.standard]
-agent = "eval_standard"
+providers = [{ provider_kind = "openhands_sdk", model = "openai/gpt-4o-mini", label = "openhands-sdk/gpt-4o-mini" }]
 
 [tiers.high]
-agent = "eval_high"
+providers = [{ provider_kind = "openhands_sdk", model = "openai/gpt-4o-mini", label = "openhands-sdk/gpt-4o-mini" }]
 
 [tiers.x_high]
-agent = "eval_x_high"
-
-# Optional. A package that declares a multi-turn test (vars.turns) auto-routes
-# to the SDK bridge using this block, so it needs only metadata.eval_tier — no
-# package-local providers block. The tier CLI provider is single-turn and cannot
-# drive vars.turns. provider_kind must be an SDK kind (opencode_sdk,
-# openhands_sdk, codex_sdk, claude_agent_sdk). See docs/setup.md.
-[multiturn]
-provider_kind = "opencode_sdk"
-model = "opencode-go/qwen3.5-plus"
-opencode_agent = "build"
+providers = [{ provider_kind = "openhands_sdk", model = "openai/gpt-4o-mini", label = "openhands-sdk/gpt-4o-mini" }]
