@@ -18,6 +18,7 @@ Conversation() construction time.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import Any
@@ -154,46 +155,66 @@ class EventExtractor:
     def _handle_action(self, evt: Any) -> None:
         """Record a tool call from ActionEvent.
 
-        ActionEvent fields (spike A.0 shape analysis):
-            evt.id          — call identifier (str)
-            evt.tool_name   — name in tool registry (str)
-            evt.tool_params — dict of call arguments
+        Live SDK fields (openhands.sdk.event ActionEvent):
+            evt.id           — EventID of this action (matched by ObservationEvent.action_id)
+            evt.tool_name    — name in tool registry (str)
+            evt.tool_call_id — canonical tool call id (matched by ObservationEvent.tool_call_id)
+            evt.tool_call    — MessageToolCall whose .arguments is a JSON string
+        Older/stub shapes (evt.tool_params / evt.params dicts) are still honored
+        via _extract_action_args fallbacks.
         """
         call_id = getattr(evt, "id", "") or ""
+        tool_call_id = getattr(evt, "tool_call_id", "") or ""
         name = getattr(evt, "tool_name", "") or getattr(evt, "name", "") or "unknown"
-        params = getattr(evt, "tool_params", None) or getattr(evt, "params", None) or {}
 
         idx = len(self._tool_calls)
         self._tool_calls.append(
             {
                 "call_id": call_id,
                 "name": name,
-                "arguments": dict(params) if params else {},
+                "arguments": _extract_action_args(evt),
                 "result": "",
                 "error": None,
             }
         )
+        # Index by BOTH ids so an observation can match via action_id OR tool_call_id.
         if call_id:
             self._call_id_index[call_id] = idx
+        if tool_call_id:
+            self._call_id_index[tool_call_id] = idx
 
     def _handle_observation(self, evt: Any) -> None:
         """Attach a tool result to its matching ActionEvent record.
 
-        ObservationEvent fields:
-            evt.cause    — call_id of the originating ActionEvent
-            evt.content  — tool output (str)
-            evt.error    — error message if tool failed (str | None)
+        Live SDK fields (openhands.sdk.event ObservationEvent):
+            evt.action_id    — EventID of the originating ActionEvent
+            evt.tool_call_id — canonical tool call id (fallback linkage key)
+            evt.observation  — Observation with .content (list[TextContent|ImageContent])
+                               and .is_error (bool)
+        Older/stub shapes (evt.cause / evt.content / evt.error) are still honored
+        via the getattr fallbacks below.
         """
-        cause_id = getattr(evt, "cause", "") or ""
-        content = getattr(evt, "content", "") or ""
-        error = getattr(evt, "error", None)
+        # Try each linkage key in priority order; the FIRST that resolves to a
+        # recorded ActionEvent wins. A truthy-but-unmatched action_id must NOT
+        # short-circuit the tool_call_id fallback (hence per-key index lookup).
+        candidate_ids = [
+            getattr(evt, "action_id", "") or "",
+            getattr(evt, "tool_call_id", "") or "",
+            getattr(evt, "cause", "") or "",
+        ]
+        content = _extract_observation_text(evt)
+        error = _extract_observation_error(evt, content)
 
-        if cause_id and cause_id in self._call_id_index:
-            idx = self._call_id_index[cause_id]
+        matched_id = next(
+            (k for k in candidate_ids if k and k in self._call_id_index), ""
+        )
+        if matched_id:
+            idx = self._call_id_index[matched_id]
             self._tool_calls[idx]["result"] = content
             if error:
                 self._tool_calls[idx]["error"] = str(error)
         else:
+            cause_id = next((k for k in candidate_ids if k), "")
             # Orphan result — append as a new unmatched entry so no data lost.
             _log.warning(
                 "EventExtractor: ObservationEvent cause_id=%r has no matching ActionEvent; "
@@ -209,6 +230,61 @@ class EventExtractor:
                     "error": f"ORPHAN_TOOL_RESULT: no matching ActionEvent for cause_id={cause_id!r}",
                 }
             )
+
+
+def _extract_action_args(evt: Any) -> dict[str, Any]:
+    """Pull call arguments off an ActionEvent across SDK shapes.
+
+    Live SDK keeps args as a JSON string at evt.tool_call.arguments; older/stub
+    shapes expose a dict at evt.tool_params / evt.params.
+    """
+    tool_call = getattr(evt, "tool_call", None)
+    if tool_call is not None:
+        raw = getattr(tool_call, "arguments", None)
+        if isinstance(raw, dict):
+            return raw
+        if isinstance(raw, str) and raw:
+            try:
+                parsed = json.loads(raw)
+            except (ValueError, TypeError):
+                return {"_raw": raw}
+            return parsed if isinstance(parsed, dict) else {"_raw": raw}
+    params = getattr(evt, "tool_params", None) or getattr(evt, "params", None) or {}
+    return dict(params) if params else {}
+
+
+def _extract_observation_text(evt: Any) -> str:
+    """Pull plain text off an ObservationEvent across SDK shapes.
+
+    Live SDK nests output at evt.observation.content (list of TextContent /
+    ImageContent blocks); older/stub shapes expose a flat str at evt.content.
+    """
+    obs = getattr(evt, "observation", None)
+    if obs is not None:
+        content = getattr(obs, "content", None)
+        if isinstance(content, str):
+            return content
+        if content is not None:
+            parts = [
+                block.text
+                for block in content
+                if isinstance(getattr(block, "text", None), str)
+            ]
+            if parts:
+                return "\n".join(parts)
+    return getattr(evt, "content", "") or ""
+
+
+def _extract_observation_error(evt: Any, text: str) -> Any:
+    """Derive a tool-error message off an ObservationEvent across SDK shapes.
+
+    Live SDK signals failure via evt.observation.is_error (the message lives in
+    the content); older/stub shapes expose a flat evt.error string.
+    """
+    obs = getattr(evt, "observation", None)
+    if obs is not None and getattr(obs, "is_error", False):
+        return text or "tool error"
+    return getattr(evt, "error", None)
 
 
 def _truncate(s: str, max_bytes: int = 1024) -> str:

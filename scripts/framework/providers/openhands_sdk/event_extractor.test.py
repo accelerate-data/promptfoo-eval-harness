@@ -10,6 +10,7 @@ Run with:
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -51,18 +52,78 @@ class MessageEvent:
         self.llm_message = LLMMessage(content)
 
 
+class MessageToolCall:
+    """Mirrors openhands.sdk.llm.message.MessageToolCall (arguments = JSON string)."""
+
+    def __init__(self, id: str, name: str, arguments: str) -> None:
+        self.id = id
+        self.name = name
+        self.arguments = arguments
+
+
+class Observation:
+    """Mirrors openhands.sdk.tool.schema.Observation."""
+
+    def __init__(self, content, is_error: bool = False) -> None:
+        self.content = content  # list[TextContent | ImageContent]
+        self.is_error = is_error
+
+
 class ActionEvent:
+    """Mirrors live SDK ActionEvent: id, tool_name, tool_call_id, tool_call.arguments."""
+
+    def __init__(
+        self, call_id: str, tool_name: str, arguments: dict, tool_call_id: str = None
+    ) -> None:
+        self.id = call_id
+        self.tool_name = tool_name
+        self.tool_call_id = tool_call_id if tool_call_id is not None else call_id
+        self.tool_call = MessageToolCall(
+            id=self.tool_call_id, name=tool_name, arguments=json.dumps(arguments)
+        )
+
+
+class ObservationEvent:
+    """Mirrors live SDK ObservationEvent: action_id, tool_call_id, observation.content/.is_error."""
+
+    def __init__(
+        self,
+        action_id: str,
+        content: str,
+        is_error: bool = False,
+        tool_name: str = "terminal",
+        tool_call_id: str = None,
+    ) -> None:
+        self.action_id = action_id
+        self.tool_call_id = tool_call_id if tool_call_id is not None else action_id
+        self.tool_name = tool_name
+        blocks = [TextContent(content)] if content else []
+        self.observation = Observation(content=blocks, is_error=is_error)
+
+
+class LegacyActionEvent:
+    """Pre-rename shape (evt.tool_params dict) — back-compat fallback path."""
+
     def __init__(self, call_id: str, tool_name: str, tool_params: dict) -> None:
         self.id = call_id
         self.tool_name = tool_name
         self.tool_params = tool_params
 
 
-class ObservationEvent:
+class LegacyObservationEvent:
+    """Pre-rename shape (evt.cause / evt.content / evt.error) — back-compat fallback path."""
+
+    # Spoof the class name so on_event() routes it as an ObservationEvent.
     def __init__(self, cause: str, content: str, error=None) -> None:
         self.cause = cause
         self.content = content
         self.error = error
+
+
+# on_event() dispatches on type(evt).__name__, so the legacy stubs must report
+# the canonical event names. Override __name__ via subclass aliases.
+LegacyActionEvent.__name__ = "ActionEvent"
+LegacyObservationEvent.__name__ = "ObservationEvent"
 
 
 class UnknownSdkEvent:
@@ -82,18 +143,39 @@ SIMPLE_FIXTURE = [
 TOOL_CALL_FIXTURE = [
     SystemPromptEvent(),
     MessageEvent(source="user", content=[TextContent("use bash")]),
-    ActionEvent(call_id="c1", tool_name="terminal", tool_params={"cmd": "ls"}),
-    ObservationEvent(cause="c1", content="file1.txt\nfile2.txt"),
+    ActionEvent(call_id="c1", tool_name="terminal", arguments={"cmd": "ls"}),
+    ObservationEvent(action_id="c1", content="file1.txt\nfile2.txt"),
     MessageEvent(source="agent", content=[TextContent("Found files.")]),
 ]
 
+# Live SDK signals failure via observation.is_error; the message lives in content.
 TOOL_ERROR_FIXTURE = [
-    ActionEvent(call_id="c2", tool_name="terminal", tool_params={"cmd": "rm -rf /"}),
-    ObservationEvent(cause="c2", content="", error="Permission denied"),
+    ActionEvent(call_id="c2", tool_name="terminal", arguments={"cmd": "rm -rf /"}),
+    ObservationEvent(action_id="c2", content="Permission denied", is_error=True),
 ]
 
 ORPHAN_OBSERVATION_FIXTURE = [
-    ObservationEvent(cause="no-such-id", content="orphan result"),
+    ObservationEvent(action_id="no-such-id", content="orphan result"),
+]
+
+# Observation links via tool_call_id when action_id does not match (fallback key).
+TOOL_CALL_ID_LINK_FIXTURE = [
+    ActionEvent(
+        call_id="evt-1", tool_name="terminal", arguments={"cmd": "pwd"},
+        tool_call_id="tc-1",
+    ),
+    ObservationEvent(action_id="mismatch", content="/home", tool_call_id="tc-1"),
+]
+
+# Legacy (pre-rename) SDK shape — exercises the getattr fallbacks.
+LEGACY_TOOL_CALL_FIXTURE = [
+    LegacyActionEvent(call_id="c1", tool_name="terminal", tool_params={"cmd": "ls"}),
+    LegacyObservationEvent(cause="c1", content="file1.txt"),
+]
+
+LEGACY_TOOL_ERROR_FIXTURE = [
+    LegacyActionEvent(call_id="c2", tool_name="terminal", tool_params={}),
+    LegacyObservationEvent(cause="c2", content="", error="Permission denied"),
 ]
 
 
@@ -167,9 +249,11 @@ class TestToolErrorTurn:
         assert len(result.tool_calls) == 1
         assert result.tool_calls[0].error == "Permission denied"
 
-    def test_tool_result_empty_on_error(self) -> None:
+    def test_error_message_kept_in_result(self) -> None:
+        # Live SDK carries the failure text in observation.content (is_error=True),
+        # so the message surfaces in both .error and .result_truncated.
         result = _run_fixture(TOOL_ERROR_FIXTURE)
-        assert result.tool_calls[0].result_truncated == ""
+        assert "Permission denied" in result.tool_calls[0].result_truncated
 
 
 class TestOrphanObservation:
@@ -240,13 +324,43 @@ class TestStartTurnReset:
     def test_reset_clears_tool_calls(self) -> None:
         ex = EventExtractor()
         ex.start_turn()
-        ex.on_event(ActionEvent(call_id="x1", tool_name="terminal", tool_params={}))
-        ex.on_event(ObservationEvent(cause="x1", content="ok"))
+        ex.on_event(ActionEvent(call_id="x1", tool_name="terminal", arguments={}))
+        ex.on_event(ObservationEvent(action_id="x1", content="ok"))
         ex.end_turn()
 
         ex.start_turn()
         result = ex.end_turn()
         assert result.tool_calls == []
+
+
+class TestToolCallIdLinkage:
+    """ObservationEvent links to its action via tool_call_id when action_id misses."""
+
+    def test_result_attached_via_tool_call_id(self) -> None:
+        result = _run_fixture(TOOL_CALL_ID_LINK_FIXTURE)
+        assert len(result.tool_calls) == 1
+        assert "/home" in result.tool_calls[0].result_truncated
+
+    def test_no_orphan_when_tool_call_id_matches(self) -> None:
+        result = _run_fixture(TOOL_CALL_ID_LINK_FIXTURE)
+        assert result.tool_calls[0].error is None
+
+
+class TestLegacyShapeBackCompat:
+    """Pre-rename SDK fields (tool_params / cause / content / error) still resolve."""
+
+    def test_legacy_arguments_extracted(self) -> None:
+        result = _run_fixture(LEGACY_TOOL_CALL_FIXTURE)
+        assert result.tool_calls[0].arguments == {"cmd": "ls"}
+
+    def test_legacy_result_attached(self) -> None:
+        result = _run_fixture(LEGACY_TOOL_CALL_FIXTURE)
+        assert "file1.txt" in result.tool_calls[0].result_truncated
+        assert result.tool_calls[0].error is None
+
+    def test_legacy_error_populated(self) -> None:
+        result = _run_fixture(LEGACY_TOOL_ERROR_FIXTURE)
+        assert result.tool_calls[0].error == "Permission denied"
 
 
 class TestTruncateHelper:
