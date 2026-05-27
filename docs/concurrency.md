@@ -24,6 +24,14 @@ semaphore implemented with `p-limit`.
   (Promptfoo will not schedule more than its own cap).
 - **Set via:** `AD_EVALS_MAX_CONCURRENCY=<positive integer>` in the
   environment.
+- **Per-process under fan-out:** `ad-evals run <dir>` spawns one Promptfoo
+  child process per package, each with its own bridge and its own INNER gate.
+  The cap therefore applies *per package*, so total in-flight `callApi` across
+  the fan-out ≈ `OUTER × INNER`. Trailing Promptfoo flags (e.g.
+  `--max-concurrency`, `--filter-pattern`) **are** forwarded to every child, so
+  `--max-concurrency N` caps each package's INNER gate at `N` (total in-flight
+  ≈ `OUTER × N`); `AD_EVALS_MAX_CONCURRENCY` sets the same per-package default
+  without a flag.
 
 ## OUTER gate — `AD_EVALS_OUTER_CONCURRENCY` (default: `os.cpus().length`)
 

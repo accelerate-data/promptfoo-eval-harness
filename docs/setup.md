@@ -232,7 +232,8 @@ cd tests/evals && npm run eval:regression
 | `npm run eval:harness-smoke` | Alias for `ad-evals run packages/harness-smoke/promptfooconfig.json`. Runs the built-in starter package; confirms OpenCode is wired. |
 | `npm run eval:smoke` | Alias for `ad-evals smoke`. Runs the `[smoke]` test from every package. |
 | `npm run eval:regression` | Alias for `ad-evals regression`. Runs all tests in all packages. |
-| `ad-evals run <config>` | Run one specific package config directly. |
+| `ad-evals run <config>` | Run **one** package — pass the path to its `promptfooconfig.json`. |
+| `ad-evals run <dir>` | Run **every** package under a directory, fanned out in parallel (one Promptfoo process each, capped by `AD_EVALS_OUTER_CONCURRENCY`). To run a chosen subset, point it at a directory containing only those packages. See [Parallelism](#parallelism). |
 
 ### Tier selection
 
@@ -483,9 +484,10 @@ artifact-cleanup guard never sees a mid-suite state change.
 
 Two layers of concurrency, both controlled from the framework.
 
-**Outer concurrency** — across packages. `ad-evals run <dir>` walks the
-directory and runs each `promptfooconfig.*` as a separate Promptfoo
-invocation. A `p-limit` gate caps how many run in parallel.
+**Outer concurrency** — across packages. `ad-evals run <dir>` scans the
+directory's immediate subdirectories and runs each one containing a
+`promptfooconfig.json` as a separate Promptfoo process (non-recursive,
+one level deep). A `p-limit` gate caps how many run in parallel.
 
 ```bash
 # Default — outer concurrency = os.cpus().length on the host
@@ -504,13 +506,32 @@ the outer limiter is broken or spawns are serializing.
 
 **Inner concurrency** — across test cases inside one package. Promptfoo's
 `--max-concurrency` controls how many `tests[]` entries inside a single
-`promptfooconfig` run in parallel. `ad-evals run` forwards extra args to
-Promptfoo verbatim — pass the flag directly after the config path
-(no `--` separator needed):
+`promptfooconfig` run in parallel.
 
-```bash
-ad-evals run packages/my-feature/promptfooconfig.json --max-concurrency 8
-```
+- **Single-config path** — `ad-evals run` forwards extra args to Promptfoo
+  verbatim; pass the flag directly after the config path (no `--` separator
+  needed):
+
+  ```bash
+  ad-evals run packages/my-feature/promptfooconfig.json --max-concurrency 8
+  ```
+
+- **Directory (fan-out) path** — trailing args after a *directory* **are**
+  forwarded to every per-package child. Because each package is its own
+  Promptfoo process, `--max-concurrency N` applies *per package*, so total
+  in-flight ≈ `OUTER × N`:
+
+  ```bash
+  # 4 packages in parallel, each capped at 2 concurrent test cases (≈ 8 total)
+  AD_EVALS_OUTER_CONCURRENCY=4 ad-evals run packages/ --max-concurrency 2
+  ```
+
+  `AD_EVALS_MAX_CONCURRENCY=2` sets the same per-package cap via the bridge gate
+  without a flag — use whichever fits your invocation:
+
+  ```bash
+  AD_EVALS_OUTER_CONCURRENCY=4 AD_EVALS_MAX_CONCURRENCY=2 ad-evals run packages/
+  ```
 
 #### When to use which
 
@@ -528,6 +549,40 @@ ad-evals run packages/my-feature/promptfooconfig.json --max-concurrency 8
 - `codex_sdk` / `claude_agent_sdk_node` / `opencode_sdk` are in-process
   Node clients — concurrency is bounded by the SDK's connection pool
   and the provider's rate limit, not spawn cost.
+
+#### Verifying parallelism
+
+`ad-evals run <dir>` prints a per-scenario summary once the fan-out
+completes:
+
+```text
+--- Scenario Results ---
+  PASS  pkg-a  (86465ms)
+  FAIL  pkg-b  (114987ms)
+2/4 scenarios passed in 114997ms
+```
+
+The fan-out is overlapping correctly when the trailing
+`... in <total>ms` is close to the **slowest** scenario, not the **sum** of
+all scenarios. To confirm, run the same directory at both extremes and
+compare the total:
+
+```bash
+# Sequential baseline — total ≈ sum of per-scenario durations
+AD_EVALS_OUTER_CONCURRENCY=1 ad-evals run packages/
+
+# Parallel — total ≈ slowest single scenario
+AD_EVALS_OUTER_CONCURRENCY=4 ad-evals run packages/
+```
+
+The `bench:throughput` gate above automates this check on every PR.
+
+> **Scoping note:** directory mode runs *every* `tests[]` entry in *every*
+> package by default. A trailing `--filter-pattern` **is** forwarded to each
+> child, so it narrows cases within every package uniformly (it does not select
+> *which packages* run). To scope by package, point `ad-evals run` at a
+> directory holding only the packages you want; combine with `--filter-pattern`
+> to also trim cases inside them.
 
 ### Multi-turn Conversational Evals
 

@@ -446,7 +446,7 @@ function _globUvCache(dir, version) {
  * @param {object} logger - Console-like logger.
  * @returns {Promise<number>} exit code
  */
-async function runDirScenarios(rootDir, paths, logger) {
+async function runDirScenarios(rootDir, paths, logger, extraArgs = []) {
   const harnessRoot = path.resolve(__dirname, '..');
   const evalRootResolved = path.resolve(paths.evalRoot);
   const relFromEvalRoot = path.relative(evalRootResolved, path.resolve(rootDir));
@@ -459,10 +459,20 @@ async function runDirScenarios(rootDir, paths, logger) {
   const suffix = injectProviders ? ' (consumer scenarios — injecting providers from eval-tiers.toml)' : '';
   logger.log(`ad-evals run: directory mode — scanning ${rootDir}${suffix}`);
 
+  // Forward trailing Promptfoo args to every scenario child. In fan-out mode
+  // they apply PER package, so e.g. --max-concurrency caps each package and the
+  // total in-flight ≈ OUTER × that. Surface this so the per-package semantics
+  // (and the OUTER×inner concurrency math) are not a silent surprise.
+  if (extraArgs.length) {
+    logger.log(`ad-evals run: forwarding promptfoo args to each scenario: ${extraArgs.join(' ')}`);
+    logger.log('  note: in directory mode these apply per-package — --max-concurrency caps each package, so total in-flight ≈ OUTER × that.');
+  }
+
   const { results, totalDurationMs, aggregatedExitCode } = await runScenarios(rootDir, {
     harnessRoot,
     env: process.env,
     injectProviders,
+    extraArgs,
   });
 
   if (results.length === 0) {
@@ -582,8 +592,9 @@ function run(
         // Mutate rest in-place for buildPromptfooArgs below.
         rest = [directConfig, ...extraRunArgs];
       } else {
-        // Scenarios tree — async fan-out via dir-walk.
-        return runDirScenarios(absArg, paths, logger);
+        // Scenarios tree — async fan-out via dir-walk. Forward trailing
+        // promptfoo args (e.g. --max-concurrency, --filter-pattern) to each child.
+        return runDirScenarios(absArg, paths, logger, extraRunArgs);
       }
     }
     // Fall through: single config file (rest already correct).
@@ -670,6 +681,8 @@ function printHelp() {
     '    If <dir> contains promptfooconfig.json: run that single scenario.',
     '    If <dir> has no promptfooconfig.json at top level: walk subdirs and',
     '    run all scenarios in parallel (outer p-limit, AD_EVALS_OUTER_CONCURRENCY).',
+    '    Trailing [promptfoo args] are forwarded to each scenario; in directory',
+    '    mode they apply per-package (--max-concurrency caps each, total ≈ OUTER × inner).',
     '  view',
     '  doctor [--install-providers]',
     '  promptfoo -- <raw promptfoo args>',

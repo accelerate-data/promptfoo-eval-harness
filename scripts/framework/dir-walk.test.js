@@ -300,6 +300,101 @@ describe('spawnScenario L1 injectProviders', () => {
 });
 
 // ---------------------------------------------------------------------------
+// L1 — extraArgs forwarding (fan-out passes trailing promptfoo flags to children)
+// ---------------------------------------------------------------------------
+
+describe('spawnScenario L1 extraArgs forwarding', () => {
+  /** Fake spawn that records argv and returns a child stub that closes with code 0. */
+  function fakeSpawn(record) {
+    return (cmd, args) => {
+      record.cmd = cmd;
+      record.args = args;
+      const handlers = {};
+      const child = {
+        stdout: { on: () => {} },
+        stderr: { on: () => {} },
+        on: (event, cb) => {
+          handlers[event] = cb;
+          if (event === 'close') setImmediate(() => cb(0, null));
+          return child;
+        },
+      };
+      return child;
+    };
+  }
+
+  test('appends extraArgs after `-c <config>` in the promptfoo argv', async () => {
+    const { spawnScenario } = require('./dir-walk');
+    const tmpDir = makeTmpDir();
+    try {
+      fs.writeFileSync(path.join(tmpDir, 'promptfooconfig.json'), '{}');
+      const record = {};
+      const r = await spawnScenario(tmpDir, process.env, '/harness-root', {
+        extraArgs: ['--max-concurrency', '8', '--filter-pattern', '^\\[smoke\\]'],
+        spawn: fakeSpawn(record),
+      });
+      assert.equal(r.exitCode, 0);
+      const cIdx = record.args.indexOf('-c');
+      assert.ok(cIdx >= 0, 'argv must contain -c');
+      // extraArgs must appear after the config path (cIdx + 2).
+      const tail = record.args.slice(cIdx + 2);
+      assert.deepEqual(tail, ['--max-concurrency', '8', '--filter-pattern', '^\\[smoke\\]']);
+    } finally {
+      rmTmpDir(tmpDir);
+    }
+  });
+
+  test('runScenarios forwards extraArgs into every scenario child', async () => {
+    const tmpRoot = makeTmpDir();
+    try {
+      stubScenarios(tmpRoot, ['alpha', 'beta']);
+      const seen = [];
+      const recordingSpawn = (cmd, args) => {
+        seen.push(args);
+        const child = {
+          stdout: { on: () => {} },
+          stderr: { on: () => {} },
+          on: (event, cb) => {
+            if (event === 'close') setImmediate(() => cb(0, null));
+            return child;
+          },
+        };
+        return child;
+      };
+      const { runScenarios: runScenariosFn } = require('./dir-walk');
+      const { results } = await runScenariosFn(tmpRoot, {
+        harnessRoot: '/harness-root',
+        env: process.env,
+        extraArgs: ['--max-concurrency', '2'],
+        spawn: recordingSpawn,
+      });
+      assert.equal(results.length, 2);
+      assert.equal(seen.length, 2);
+      for (const args of seen) {
+        const tail = args.slice(args.indexOf('-c') + 2);
+        assert.deepEqual(tail, ['--max-concurrency', '2']);
+      }
+    } finally {
+      rmTmpDir(tmpRoot);
+    }
+  });
+
+  test('no extraArgs → argv ends at the config path (back-compat)', async () => {
+    const { spawnScenario } = require('./dir-walk');
+    const tmpDir = makeTmpDir();
+    try {
+      fs.writeFileSync(path.join(tmpDir, 'promptfooconfig.json'), '{}');
+      const record = {};
+      await spawnScenario(tmpDir, process.env, '/harness-root', { spawn: fakeSpawn(record) });
+      const cIdx = record.args.indexOf('-c');
+      assert.equal(record.args.length, cIdx + 2, 'argv must end right after the config path when no extraArgs');
+    } finally {
+      rmTmpDir(tmpDir);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // L2 — real scenario integration (gated behind SKIP_INTEGRATION)
 // ---------------------------------------------------------------------------
 

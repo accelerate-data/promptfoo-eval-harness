@@ -75,13 +75,19 @@ function* walkScenarios(rootDir) {
  * @param {string} harnessRoot - Repo root (used to locate node_modules/promptfoo).
  * @param {object} [options]
  * @param {boolean} [options.injectProviders=false] - Materialize tier providers.
+ * @param {string[]} [options.extraArgs=[]] - Trailing Promptfoo args appended
+ *   after `-c <config>` (e.g. `--max-concurrency`, `--filter-pattern`). In
+ *   fan-out mode these apply per-package — total in-flight ≈ OUTER × inner.
  * @param {Function} [options.writeResolvedConfig] - Override for tests.
+ * @param {Function} [options.spawn] - child_process.spawn override for tests.
  * @returns {Promise<{name: string, exitCode: number, stdout: string, stderr: string, durationMs: number}>}
  */
 function spawnScenario(scenarioDir, env, harnessRoot, options = {}) {
   const {
     injectProviders = false,
+    extraArgs = [],
     writeResolvedConfig: writeResolved = defaultWriteResolvedConfig,
+    spawn: spawnImpl = spawn,
   } = options;
   const name = path.basename(scenarioDir);
   let configPath = path.join(scenarioDir, 'promptfooconfig.json');
@@ -110,7 +116,7 @@ function spawnScenario(scenarioDir, env, harnessRoot, options = {}) {
     let stdout = '';
     let stderr = '';
 
-    const child = spawn(process.execPath, [promptfooEntrypoint, 'eval', '--no-cache', '-c', configPath], {
+    const child = spawnImpl(process.execPath, [promptfooEntrypoint, 'eval', '--no-cache', '-c', configPath, ...extraArgs], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: childEnv,
       cwd: harnessRoot,
@@ -171,12 +177,15 @@ function spawnScenario(scenarioDir, env, harnessRoot, options = {}) {
  * @param {boolean} [opts.injectProviders=false] - Materialize tier providers
  *   for each scenario before spawn. Set when `rootDir` lives inside EVAL_ROOT
  *   (consumer-owned scenarios that rely on `config/eval-tiers.toml`).
+ * @param {string[]} [opts.extraArgs=[]] - Trailing Promptfoo args forwarded to
+ *   each scenario child (applied per-package; total in-flight ≈ OUTER × inner).
  * @param {Function} [opts.writeResolvedConfig] - Override for tests.
+ * @param {Function} [opts.spawn] - child_process.spawn override for tests.
  * @returns {Promise<{results: Array, totalDurationMs: number, aggregatedExitCode: number}>}
  */
 async function runScenarios(
   rootDir,
-  { concurrency, env, harnessRoot, injectProviders = false, writeResolvedConfig: writeResolved } = {},
+  { concurrency, env, harnessRoot, injectProviders = false, extraArgs = [], writeResolvedConfig: writeResolved, spawn: spawnImpl } = {},
 ) {
   const scenarioDirs = [...walkScenarios(rootDir)];
 
@@ -198,8 +207,9 @@ async function runScenarios(
 
   const childEnv = env ? { ...process.env, ...env } : process.env;
 
-  const spawnOptions = { injectProviders };
+  const spawnOptions = { injectProviders, extraArgs };
   if (writeResolved) spawnOptions.writeResolvedConfig = writeResolved;
+  if (spawnImpl) spawnOptions.spawn = spawnImpl;
 
   const startMs = Date.now();
   const results = await Promise.all(
