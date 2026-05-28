@@ -1,11 +1,10 @@
-name: Publish
+name: Release
 
-# Triggered by a version tag push (e.g. v1.0.0, v1.0.0-canary.1, v1.2.0-rc.1).
-# Can also be triggered manually via workflow_dispatch for emergency re-publish.
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*'
+  # Added from publish.yml: manual trigger for emergency re-publish.
   workflow_dispatch:
     inputs:
       skip_nightly_gate:
@@ -14,13 +13,14 @@ on:
         default: 'false'
 
 permissions:
-  contents: read
-  id-token: write   # required for npm provenance attestation
+  contents: write
+  id-token: write
 
-# ---------------------------------------------------------------------------
-# Job 1: test — matrix over python versions (ubuntu-latest × {3.12, 3.13})
-# ---------------------------------------------------------------------------
 jobs:
+  # ---------------------------------------------------------------------------
+  # Added from publish.yml: test job (matrix py 3.12/3.13) — runs before release
+  # to validate Node + Python bridge + smoke scenarios in mock mode.
+  # ---------------------------------------------------------------------------
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -28,25 +28,18 @@ jobs:
       fail-fast: true
       matrix:
         python-version: ['3.12', '3.13']
-
     steps:
       - uses: actions/checkout@v6
         with:
-          # fetch full history so `git describe` works and tags are available
           fetch-depth: 0
-
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: 'npm'
-
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:
           python-version: ${{ matrix.python-version }}
-
-      # Cache the uv package store keyed on SDK pins — avoids re-downloading
-      # openhands-sdk on every run when the pin hasn't changed.
       - name: Cache uv package store
         uses: actions/cache@v4
         with:
@@ -54,28 +47,19 @@ jobs:
           key: uv-${{ matrix.python-version }}-${{ hashFiles('config/sdk-pins.toml') }}
           restore-keys: |
             uv-${{ matrix.python-version }}-
-
       - name: Install Node dependencies
         run: npm ci --no-audit --no-fund
-
       - name: Pre-warm openhands-sdk uv cache (doctor --install-providers)
-        # Matches the spawn spec in _node_bridge.js. AD_EVALS_OFFLINE is NOT set
-        # here — this step IS the warm-up.
         run: |
           source $HOME/.cargo/env 2>/dev/null || true
           node bin/ad-evals.js doctor --install-providers
-
       - name: npm test
         run: npm test
-
       - name: pytest
         run: |
           source $HOME/.cargo/env 2>/dev/null || true
           uv run --python ${{ matrix.python-version }} pytest -q
-
       - name: Run all framework scenarios (mock mode, no live keys)
-        # Outer concurrency intentionally unset — each scenario gets its own
-        # PROMPTFOO_CONFIG_DIR so the SQLite state DB is isolated (spec §5.3).
         env:
           OPENCODE_MOCK_MODE: '1'
           PYTHONPATH: ${{ github.workspace }}/tests/_mock_openhands_sdk
@@ -83,53 +67,29 @@ jobs:
           source $HOME/.cargo/env 2>/dev/null || true
           node bin/ad-evals.js run tests/harness-scenarios/packages
 
-# ---------------------------------------------------------------------------
-# Job 2: publish — single-shot (not matrix) after both test matrix legs pass
-# ---------------------------------------------------------------------------
-  publish:
-    name: Publish to npm
-    needs: test
+  # ---------------------------------------------------------------------------
+  # release job — preserves the ORIGINAL release.yml content verbatim, with
+  # only additions interleaved (nightly gate + dist-tag derivation + --tag flag).
+  # ---------------------------------------------------------------------------
+  release:
+    needs: test   # Added: gate behind test job
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
-          cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          python-version: '3.12'
-
-      - name: Cache uv package store (publish job)
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/share/uv
-          key: uv-3.12-${{ hashFiles('config/sdk-pins.toml') }}
-          restore-keys: |
-            uv-3.12-
-
-      - name: Install Node dependencies
-        run: npm ci --no-audit --no-fund
-
-      # ---------------------------------------------------------------------------
-      # Nightly gate: assert that nightly-scenarios.yml has been green for at least
-      # two consecutive runs on main before we publish.
-      #
-      # Escape hatch: set repository secret SKIP_NIGHTLY_GATE_FIRST_RELEASE=true
-      # to bypass this check for the very first publish (v1.0.0) before nightly
-      # history exists on main. REMOVE the secret after v1.0.0 is published — all
-      # subsequent releases (v1.0.1+) MUST pass the gate organically.
-      # See docs/release-readiness.md for the full rationale.
-      # ---------------------------------------------------------------------------
+      # Added from publish.yml: nightly gate.
+      # Asserts nightly-scenarios.yml has been green for at least 2 consecutive
+      # runs on main before we publish. Escape hatch: secret
+      # SKIP_NIGHTLY_GATE_FIRST_RELEASE=true bypasses (first release only),
+      # OR workflow_dispatch input skip_nightly_gate=true for emergency re-publish.
       - name: Nightly gate — assert 2 consecutive green nightly runs on main
-        if: ${{ secrets.SKIP_NIGHTLY_GATE_FIRST_RELEASE != 'true' }}
+        if: ${{ secrets.SKIP_NIGHTLY_GATE_FIRST_RELEASE != 'true' && github.event.inputs.skip_nightly_gate != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -139,18 +99,12 @@ jobs:
           echo "Consecutive nightly-green runs on main: ${GREEN_COUNT}"
           if [ "${GREEN_COUNT}" -lt 2 ]; then
             echo "::error::Nightly gate failed — fewer than 2 consecutive successful nightly runs on main."
-            echo "::error::Either wait for two nightly runs to pass, or set SKIP_NIGHTLY_GATE_FIRST_RELEASE=true (v1.0.0 only)."
+            echo "::error::Either wait for two nightly runs to pass, or set SKIP_NIGHTLY_GATE_FIRST_RELEASE=true (first release only)."
             exit 1
           fi
 
-      # ---------------------------------------------------------------------------
-      # Derive npm dist-tag from the git tag:
-      #   v1.0.0-canary.N  → canary
-      #   v1.0.0-next.N    → next
-      #   v1.0.0-beta.N    → next
-      #   v1.0.0-rc.N      → next
-      #   v1.0.0           → latest
-      # ---------------------------------------------------------------------------
+      # Added from publish.yml: derive npm dist-tag from version suffix.
+      #   v1.0.0-canary.N → canary | v1.0.0-{next,beta,rc}.N → next | v1.0.0 → latest
       - name: Derive npm dist-tag from version
         id: tag
         run: |
@@ -166,8 +120,20 @@ jobs:
           echo "npm_tag=$TAG"     >> "$GITHUB_OUTPUT"
           echo "Resolved npm tag: $TAG (version: $VERSION)"
 
-      - name: Publish to npm (${{ steps.tag.outputs.npm_tag }})
+      - name: Generate changelog
+        id: changelog
         run: |
-          npm publish --provenance --access public --tag ${{ steps.tag.outputs.npm_tag }}
+          PREV_TAG="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || echo '')"
+          if [ -n "$PREV_TAG" ]; then
+            git log --pretty=format:'- %s (%h)' "$PREV_TAG..${GITHUB_REF_NAME}" > CHANGELOG_TMP.md
+          else
+            git log --pretty=format:'- %s (%h)' > CHANGELOG_TMP.md
+          fi
+      - uses: softprops/action-gh-release@v3
+        with:
+          body_path: CHANGELOG_TMP.md
+          generate_release_notes: true
+      # Original npm publish, augmented with --tag from publish.yml dist-tag step.
+      - run: npm publish --provenance --access public --tag ${{ steps.tag.outputs.npm_tag }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
