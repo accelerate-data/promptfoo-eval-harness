@@ -88,11 +88,18 @@ jobs:
       # runs on main before we publish. Escape hatch: secret
       # SKIP_NIGHTLY_GATE_FIRST_RELEASE=true bypasses (first release only),
       # OR workflow_dispatch input skip_nightly_gate=true for emergency re-publish.
+      # GitHub Actions disallows `secrets.*` directly in step-level `if:`
+      # conditionals — bind them to env vars first and branch inside `run:`.
       - name: Nightly gate — assert 2 consecutive green nightly runs on main
-        if: ${{ secrets.SKIP_NIGHTLY_GATE_FIRST_RELEASE != 'true' && github.event.inputs.skip_nightly_gate != 'true' }}
         env:
+          SKIP_GATE_SECRET: ${{ secrets.SKIP_NIGHTLY_GATE_FIRST_RELEASE }}
+          DISPATCH_SKIP_INPUT: ${{ github.event.inputs.skip_nightly_gate }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if [ "${SKIP_GATE_SECRET}" = "true" ] || [ "${DISPATCH_SKIP_INPUT}" = "true" ]; then
+            echo "Nightly gate skipped (SKIP_GATE_SECRET=${SKIP_GATE_SECRET}, DISPATCH_SKIP_INPUT=${DISPATCH_SKIP_INPUT})."
+            exit 0
+          fi
           GREEN_COUNT=$(gh api \
             "repos/${{ github.repository }}/actions/workflows/nightly-scenarios.yml/runs?branch=main&status=success&per_page=2" \
             --jq '.workflow_runs | length' 2>/dev/null || echo 0)
