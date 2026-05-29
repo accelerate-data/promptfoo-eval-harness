@@ -6,6 +6,62 @@ const path = require('node:path');
 const { writeResolvedConfig } = require('./resolve-promptfoo-config');
 const { EVAL_ROOT, REPO_ROOT } = require('./roots');
 
+// ---------------------------------------------------------------------------
+// Workspace post-run assertion (spec §7.3, E.24)
+// ---------------------------------------------------------------------------
+
+/**
+ * After a successful Promptfoo run, assert that
+ * tests/evals/.tmp/workspaces/<run_id>/ is empty (the bridge must have
+ * cleaned up every per-case directory). If AD_EVALS_KEEP_WORKSPACE is set,
+ * the assertion is skipped.
+ *
+ * @param {string} runId  - value of AD_EVALS_RUN_ID (may be empty string)
+ * @param {{ readdirSync?: Function, log?: Function, error?: Function }} deps
+ * @returns {number} 0 on pass, 1 on dirty workspace
+ */
+function assertWorkspaceClean(
+  runId,
+  {
+    readdirSync = fs.readdirSync,
+    log = console.error,
+    error = console.error,
+  } = {},
+) {
+  if (process.env.AD_EVALS_KEEP_WORKSPACE === '1' || process.env.AD_EVALS_KEEP_WORKSPACE === 'true') {
+    const wsRoot = path.join('tests/evals/.tmp/workspaces', runId || '');
+    log(`workspace assertion skipped, AD_EVALS_KEEP_WORKSPACE set (path: ${wsRoot})`);
+    return 0;
+  }
+
+  if (!runId) {
+    // No run_id means workspace path is indeterminate — skip assertion silently.
+    return 0;
+  }
+
+  const wsRoot = path.join('tests/evals/.tmp/workspaces', runId);
+
+  let entries;
+  try {
+    entries = readdirSync(wsRoot, { withFileTypes: true });
+  } catch (e) {
+    if (e.code === 'ENOENT') {
+      // Directory never created — nothing to assert.
+      return 0;
+    }
+    error(`workspace assertion error reading ${wsRoot}: ${e.message}`);
+    return 1;
+  }
+
+  if (entries.length === 0) {
+    return 0;
+  }
+
+  const names = entries.map((e) => e.name).join(', ');
+  error(`WORKSPACE_DIRTY: ${entries.length} leftover entries under tests/evals/.tmp/workspaces/${runId}/: ${names}`);
+  return 1;
+}
+
 const PROMPTFOO_ENTRYPOINT = path.join(
   EVAL_ROOT,
   'node_modules',
@@ -270,6 +326,7 @@ function runPromptfooInvocation(
 function main(
   argv = process.argv.slice(2),
   {
+    assertWorkspaceClean: assertWsClean = assertWorkspaceClean,
     collectGitSnapshot: collectSnapshot = collectGitSnapshot,
     detectCleanupViolations: detectViolations = detectCleanupViolations,
     formatViolationMessage: formatViolations = formatViolationMessage,
@@ -295,6 +352,13 @@ function main(
 
     if (status !== 0 && status !== PROMPTFOO_EVAL_RESULT_FAILURE_STATUS) {
       finalStatus = finalStatus || status;
+      continue;
+    }
+
+    // Post-run workspace assertion — only on clean (exit 0 or eval-failure-only) runs.
+    const wsStatus = assertWsClean(process.env.AD_EVALS_RUN_ID || '');
+    if (wsStatus !== 0) {
+      return wsStatus;
     }
   }
 
@@ -308,6 +372,7 @@ if (require.main === module) {
 module.exports = {
   ALLOWED_ARTIFACT_PREFIXES,
   PROMPTFOO_EVAL_RESULT_FAILURE_STATUS,
+  assertWorkspaceClean,
   collectGitSnapshot,
   detectCleanupViolations,
   formatViolationMessage,

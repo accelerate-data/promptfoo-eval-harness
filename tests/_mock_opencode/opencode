@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Mock opencode binary for CI scenario testing (no live API key needed).
+#
+# Usage: opencode run --agent <agent> --dir <dir> --format <fmt> --log-level <lvl> <prompt>
+#
+# Behaviour:
+#   - Parses the trailing <prompt> argument.
+#   - Emits a canned JSON response whose "output" field echoes the prompt.
+#   - Always exits 0.
+#   - Never reads ANTHROPIC_API_KEY or contacts any network endpoint.
+#   - Discards all flags — only the last positional argument is used.
+#
+# This file is checked into the repo. Its sole purpose is to allow the
+# opencode-cli-compatibility scenario to run in CI without the opencode
+# binary or an Anthropic API key. Set OPENCODE_MOCK_MODE=1 or override
+# PATH per tests/harness-scenarios/packages/opencode-cli-compatibility/run.sh.
+
+set -euo pipefail
+
+# The prompt is the last positional argument (all flags come before it).
+PROMPT="${@: -1}"
+
+# Emit a minimal canned response so the bridge sees non-empty stdout.
+printf '[mock] %s\n' "${PROMPT}"
+
+exit 0

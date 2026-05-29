@@ -1,0 +1,46 @@
+{
+  "scenarios": [
+    {
+      "name": "minimal-smoke",
+      "path": "tests/harness-scenarios/packages/minimal-smoke",
+      "provider_kinds": ["opencode_cli"],
+      "requires_live_key": false,
+      "expected_runtime_seconds": 10
+    },
+    {
+      "name": "opencode-cli-compatibility",
+      "path": "tests/harness-scenarios/packages/opencode-cli-compatibility",
+      "provider_kinds": ["opencode_cli"],
+      "requires_live_key": false,
+      "expected_runtime_seconds": 30
+    },
+    {
+      "name": "openhands-mock-multi-turn",
+      "path": "tests/harness-scenarios/packages/openhands-mock-multi-turn",
+      "provider_kinds": ["openhands_sdk"],
+      "requires_live_key": false,
+      "expected_runtime_seconds": 30
+    },
+    {
+      "name": "claude-mock-multi-turn",
+      "path": "tests/harness-scenarios/packages/claude-mock-multi-turn",
+      "provider_kinds": ["claude_agent_sdk"],
+      "requires_live_key": false,
+      "expected_runtime_seconds": 30
+    },
+    {
+      "name": "opencode-sdk-mock-multi-turn",
+      "path": "tests/harness-scenarios/packages/opencode-sdk-mock-multi-turn",
+      "provider_kinds": ["opencode_sdk"],
+      "requires_live_key": false,
+      "expected_runtime_seconds": 30
+    },
+    {
+      "name": "codex-sdk-mock-multi-turn",
+      "path": "tests/harness-scenarios/packages/codex-sdk-mock-multi-turn",
+      "provider_kinds": ["codex_sdk"],
+      "requires_live_key": false,
+      "expected_runtime_seconds": 30
+    }
+  ]
+}

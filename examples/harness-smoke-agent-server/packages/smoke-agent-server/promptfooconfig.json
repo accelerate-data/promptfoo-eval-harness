@@ -1,0 +1,20 @@
+{
+  "description": "openhands-agent-server harness smoke (gated E2E).",
+  "metadata": {
+    "eval_tier": "light"
+  },
+  "prompts": [
+    "Workspace: {{workspace}}\nReply with the literal text: ready"
+  ],
+  "tests": [
+    {
+      "description": "[smoke] agent-server boot + reply",
+      "vars": {
+        "workspace": "/tmp/harness-smoke-agent-server"
+      },
+      "assert": [
+        { "type": "icontains", "value": "ready" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "description": "codex-sdk-mock-multi-turn — single + multi-turn codex_sdk scenarios using the mock SDK (no live key needed).",
+  "providers": [
+    {
+      "id": "file://../../../../scripts/framework/_node_bridge.js",
+      "label": "codex-sdk/codex-mock",
+      "config": {
+        "provider_kind": "codex_sdk",
+        "provider_label": "codex-sdk/codex-mock",
+        "model": "gpt-4o",
+        "extra": {
+          "sandbox_mode": "workspace-write",
+          "reasoning_effort": "medium"
+        }
+      }
+    }
+  ],
+  "tests": [
+    {
+      "description": "[single-turn] greeting yields Hi there!",
+      "vars": {
+        "turns": "[\"hello\"]"
+      },
+      "assert": [
+        {
+          "type": "javascript",
+          "value": "output && output.length > 0"
+        },
+        {
+          "type": "javascript",
+          "value": "output.includes('Hi there!')"
+        }
+      ]
+    },
+    {
+      "description": "[multi-turn] 3-turn session must recall the number remembered in turn 1",
+      "vars": {
+        "turns": "[\"Please remember 42 for me.\", \"Thanks, log that for later.\", \"what number was it?\"]"
+      },
+      "assert": [
+        {
+          "type": "javascript",
+          "value": "output && output.length > 0"
+        },
+        {
+          "type": "javascript",
+          "value": "(() => { const parts = output.split('\\n---\\n'); return parts.length === 3; })()"
+        },
+        {
+          "type": "javascript",
+          "value": "output.split('\\n---\\n')[0].includes(\"I'll remember 42\")"
+        },
+        {
+          "type": "javascript",
+          "value": "output.split('\\n---\\n')[2].includes('42')"
+        }
+      ]
+    }
+  ]
+}

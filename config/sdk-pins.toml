@@ -1,0 +1,99 @@
+# config/sdk-pins.toml — framework-owned, single source of truth for SDK versions
+# and per-provider env allowlists. See spec §6.4.
+#
+# Consumers CANNOT override per-repo. CVE in a pinned version → harness patch
+# release; consumers run `npm update`.
+
+[openhands_sdk]
+version = "1.22.1"
+# Tools moved out of openhands-sdk into the companion openhands-tools package
+# as of v1.22+. The harness whitelist (tool_registry.py) references the names
+# registered by openhands-tools, so this pin must always accompany the SDK
+# version in the spawn argv. Bump both in lockstep — there is no published
+# compatibility matrix yet, so a smoke run is required on every change.
+tools_version = "1.23.0"
+python = ">=3.12,<3.14"
+# extras: empty — confirmed by spike A.0 (no extras group required).
+# If a future version requires extras (e.g. ["tools"]), update here AND
+# every `uv run --with openhands-sdk==...` call site in spec §2.6 / §6.3.
+extras = []
+# Env vars forwarded to the Python subprocess. All other keys matching
+# secret patterns (*_API_KEY, *_TOKEN, *_SECRET, etc.) are stripped. See §7.1.
+# OPENHANDS_BASE_URL and OPENHANDS_MODEL_OVERRIDE: consumer-side .env knobs for
+# pointing the provider at a local/staging gateway and forcing a specific model
+# without editing eval-tiers.toml. See agent_factory.py module docstring.
+env_allowlist = [
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "OPENROUTER_API_KEY",
+  "OPENHANDS_API_KEY",
+  "OPENHANDS_BASE_URL",
+  "OPENHANDS_MODEL_OVERRIDE",
+  "OPENHANDS_SUPPRESS_BANNER",
+]
+
+[opencode_cli]
+# OpenCode CLI is system-installed. Harness verifies `opencode --version` against this.
+min_version = "0.1.0"
+# Env vars forwarded to the opencode subprocess (matches opencode-cli-provider.js usage).
+env_allowlist = [
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "OPENCODE_CONFIG",
+  "XDG_STATE_HOME",
+]
+
+[claude_agent_sdk]
+# Phase 10 / VD-2174-9 — Claude Agent SDK provider (v1.1.0).
+# Alpha SDK; canary required on each version bump (spec §9.7).
+version = "0.2.85"
+python = ">=3.12,<3.14"
+extras = []
+# Trimmed env allowlist (Minimalist #6) — Bedrock / Vertex / Foundry backends
+# are out of scope for v1.1.0; re-add when those backends ship.
+env_allowlist = [
+  "ANTHROPIC_API_KEY",
+]
+
+[openhands_agent_server]
+# Daemon-mode wrapper provider — see scripts/framework/openhands-agent-server-provider.js.
+# The harness CLI (bin/ad-evals.js) auto-starts the daemon on a dynamic
+# 127.0.0.1 port and injects OPENHANDS_SERVER_URL into the promptfoo
+# subprocess env. The provider reads that env var before falling back
+# to openhands.json.
+# Bumped 2026-05-26 from 1.21.1 → 1.23.1. The 1.21.1 wheel declared an
+# unversioned `openhands-sdk` dependency, so uvx pulled the latest sdk
+# (1.23.x) at runtime → `ImportError: cannot import name 'AgentSettings'
+# from openhands.sdk.settings`. The HTTP/WS surface this provider relies
+# on (POST /api/conversations → `ConversationInfo.id`, WS
+# `/sockets/events/{conversation_id}`, MessageEvent / ActionEvent /
+# ConversationStateUpdateEvent / ConversationErrorEvent payloads) is
+# byte-identical between 1.21.1 and 1.23.1 — this is a pure version
+# refresh, not a provider refactor.
+version = "1.23.1"
+# Locks the openhands-tools companion package version. Source script
+# (templates/scripts/openhands-server.sh) ties the two together; do not
+# split them without verifying upstream compatibility.
+tools_version = "1.23.1"
+# Explicit openhands-sdk pin — agent-server-lifecycle.js feeds this into
+# `uvx --with openhands-sdk==<sdk_version>` so the sdk minor never drifts
+# ahead of the agent-server wheel (the 2026-05-26 root cause). Kept here
+# alongside `tools_version` so the lockstep contract test can assert all
+# three move together.
+sdk_version = "1.23.1"
+python = ">=3.12,<3.14"
+extras = []
+# LiteLLM provider keys the daemon child needs to reach model APIs.
+# OPENHANDS_SERVER_URL is set on the promptfoo subprocess by the CLI; it
+# is NOT forwarded into the daemon child env.
+env_allowlist = [
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "OPENROUTER_API_KEY",
+  "OPENCODE_API_KEY",
+  "GROQ_API_KEY",
+  "DEEPSEEK_API_KEY",
+  "OPENHANDS_API_KEY",
+  "OPENHANDS_MODEL_OVERRIDE",
+]
+startup_timeout_ms = 30000

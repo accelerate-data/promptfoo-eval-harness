@@ -12,14 +12,34 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.13']
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Full history required: the v1.5.0 byte-identity contract test
+          # (opencode-cli-plugin-provider.test.js) runs `git diff` against the
+          # phase-04 parent SHA recorded in tests/_fixtures/phase-04-parent.sha.
+          # A shallow clone fails with `fatal: bad object <sha>`.
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: 'npm'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Sync Python dependencies
+        run: uv sync --frozen
       - run: npm ci --no-audit --no-fund
       - run: npm test
+      - name: Benchmark gates
+        run: npm run bench
+        # BENCH_OVERRIDE_REASON is intentionally NOT set in CI.
+        # A failing budget MUST fail the build.
       - name: Lint markdown
         run: npx --no markdownlint-cli '**/*.md' --ignore node_modules
       - name: Verify init script is syntactically valid

@@ -1,0 +1,1 @@
+Reply with this exact JSON object as plain text only. Do NOT call any tools — no finish, no think, no file, shell, or browser tools. Your entire response must be the raw JSON and nothing else: {"scenario":"{{label}}","ok":true,"failures":[]}

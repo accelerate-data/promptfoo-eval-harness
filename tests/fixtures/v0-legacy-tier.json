@@ -1,0 +1,24 @@
+{
+  "runtime": {
+    "provider_id": "framework://opencode-cli-provider.js",
+    "opencode_config": "config/opencode.json",
+    "project_dir": ".",
+    "format": "json",
+    "log_level": "info",
+    "print_logs": false
+  },
+  "tiers": {
+    "light": {
+      "agent": "opencode-haiku"
+    },
+    "standard": {
+      "agent": "opencode-sonnet"
+    },
+    "high": {
+      "agent": "opencode-sonnet-high"
+    },
+    "x_high": {
+      "agent": "opencode-opus"
+    }
+  }
+}

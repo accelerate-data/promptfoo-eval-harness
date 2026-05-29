@@ -1,0 +1,20 @@
+[runtime]
+provider_id = "framework://opencode-cli-provider.js"
+opencode_config = "opencode.json"
+project_dir = "../.."
+format = "default"
+log_level = "ERROR"
+print_logs = false
+empty_output_retries = 1
+
+[tiers.light]
+agent = "eval_light"
+
+[tiers.standard]
+agent = "eval_standard"
+
+[tiers.high]
+agent = "eval_high"
+
+[tiers.x_high]
+agent = "eval_x_high"

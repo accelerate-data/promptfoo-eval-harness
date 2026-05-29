@@ -1,0 +1,86 @@
+name: Nightly Scenarios
+
+on:
+  schedule:
+    # 02:00 UTC every night
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  run-scenarios:
+    name: Run framework scenarios (mock mode)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Install Node dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Pre-warm openhands-sdk uv cache
+        # Matches the exact spawn spec used by the bridge (spec §6.3).
+        # AD_EVALS_OFFLINE is NOT set here — this step IS the warm-up.
+        run: |
+          source $HOME/.cargo/env 2>/dev/null || true
+          uv run --python 3.12 --with openhands-sdk==1.22.1 python -c "import openhands.sdk"
+
+      - name: Pre-warm claude-agent-sdk uv cache
+        # Matches the exact spawn spec used by the bridge (Phase 10 / VD-2174-9).
+        run: |
+          source $HOME/.cargo/env 2>/dev/null || true
+          uv run --python 3.12 --with claude-agent-sdk==0.2.85 python -c "import claude_agent_sdk"
+
+      - name: Run framework scenarios except opencode_sdk (mock mode, no live keys)
+        env:
+          OPENCODE_MOCK_MODE: '1'
+          # PYTHONPATH is colon-separated so both mock SDK shims load before the
+          # real wheels (Phase 10 added the claude_agent_sdk shim).
+          PYTHONPATH: ${{ github.workspace }}/tests/_mock_claude_agent_sdk:${{ github.workspace }}/tests/_mock_openhands_sdk
+          # Outer concurrency intentionally unset — dir-walk gives each scenario
+          # its own PROMPTFOO_CONFIG_DIR, so the SQLite state DB is isolated and
+          # parallel runs are safe (spec §5.3 multi-scenario parallelism).
+        run: |
+          source $HOME/.cargo/env 2>/dev/null || true
+          node bin/ad-evals.js run \
+            tests/harness-scenarios/packages/minimal-smoke \
+            tests/harness-scenarios/packages/opencode-cli-compatibility \
+            tests/harness-scenarios/packages/openhands-mock-multi-turn \
+            tests/harness-scenarios/packages/claude-mock-multi-turn
+
+      - name: Run opencode_sdk mock scenario (mock SDK via ESM loader)
+        # NODE_OPTIONS scoped to this step only — Module.register() in
+        # register.mjs intercepts `@opencode-ai/sdk` imports for the
+        # opencode_sdk provider so no real server boots. Other scenarios
+        # never see this hook because the step boundary unsets NODE_OPTIONS.
+        env:
+          NODE_OPTIONS: --import ${{ github.workspace }}/tests/_mock_opencode_sdk/register.mjs
+        run: |
+          source $HOME/.cargo/env 2>/dev/null || true
+          node bin/ad-evals.js run tests/harness-scenarios/packages/opencode-sdk-mock-multi-turn
+
+      - name: Run codex_sdk mock scenario (mock SDK via ESM loader hook)
+        # NODE_OPTIONS scoped to this step only — Module.register loader
+        # hook in register.mjs remaps `@openai/codex-sdk` to the mock so
+        # neither the real SDK nor the @openai/codex CLI bin is spawned.
+        # The real `@openai/codex-sdk` is ESM-only (v1.3.1), so we use
+        # --import instead of --require. Other scenarios never see this
+        # hook because the step boundary unsets NODE_OPTIONS.
+        env:
+          NODE_OPTIONS: --import file://${{ github.workspace }}/tests/_mock_codex_sdk/register.mjs
+        run: |
+          source $HOME/.cargo/env 2>/dev/null || true
+          node bin/ad-evals.js run tests/harness-scenarios/packages/codex-sdk-mock-multi-turn

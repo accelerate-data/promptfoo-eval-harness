@@ -1,0 +1,18 @@
+{
+  "openhands_version": "1.23.1",
+  "litellm_provider": "openai",
+  "adapter": {
+    "agent_id": "harness-smoke:eval-agent",
+    "agent_entrypoint_file": "examples/harness-smoke-agent-server/agents/eval.md",
+    "agent_semantics": "react-loop",
+    "eval_mode_preamble": "You are running in eval mode. Respond with plain text only — do not call tools."
+  },
+  "agent": {
+    "eval_light": {
+      "model": "openai/gpt-4o-mini",
+      "temperature": 0,
+      "steps": 20,
+      "permission": "read-only"
+    }
+  }
+}

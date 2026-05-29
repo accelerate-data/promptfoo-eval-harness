@@ -1,0 +1,1 @@
+Extract only the numbers from this sentence and list them comma-separated: There are 3 cats, 12 dogs, and 7 birds.
