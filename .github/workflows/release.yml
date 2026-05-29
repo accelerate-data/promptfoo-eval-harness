@@ -53,6 +53,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Full history required: the phase-04 byte-identity contract test
+          # (opencode-cli-plugin-provider.test.js) runs `git diff` against the
+          # parent SHA recorded in tests/_fixtures/phase-04-parent.sha — same
+          # rationale as ci.yml.
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
