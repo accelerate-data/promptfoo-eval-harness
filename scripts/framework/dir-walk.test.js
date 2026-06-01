@@ -395,6 +395,58 @@ describe('spawnScenario L1 extraArgs forwarding', () => {
 });
 
 // ---------------------------------------------------------------------------
+// L1b — promptfoo entrypoint resolution (hoisted consumer install)
+// ---------------------------------------------------------------------------
+
+describe('spawnScenario promptfoo entrypoint resolution', () => {
+  /** Fake spawn that records argv[0] (the resolved entrypoint) and closes 0. */
+  function fakeSpawn(record) {
+    return (cmd, args) => {
+      record.cmd = cmd;
+      record.args = args;
+      const child = {
+        stdout: { on: () => {} },
+        stderr: { on: () => {} },
+        on: (event, cb) => {
+          if (event === 'close') setImmediate(() => cb(0, null));
+          return child;
+        },
+      };
+      return child;
+    };
+  }
+
+  test('resolves promptfoo from EVAL_ROOT when harnessRoot lacks node_modules/promptfoo (hoisted install)', async () => {
+    const { spawnScenario } = require('./dir-walk');
+    const { EVAL_ROOT } = require('./roots');
+    const tmpDir = makeTmpDir();
+    try {
+      fs.writeFileSync(path.join(tmpDir, 'promptfooconfig.json'), '{}');
+      const record = {};
+      // harnessRoot mimics a hoisted consumer install: promptfoo is NOT nested
+      // under the harness package, it lives at EVAL_ROOT/node_modules/promptfoo.
+      await spawnScenario(tmpDir, process.env, '/nonexistent-harness-root', {
+        spawn: fakeSpawn(record),
+      });
+      const entrypoint = record.args[0];
+      const evalRootEntry = path.join(
+        EVAL_ROOT, 'node_modules', 'promptfoo', 'dist', 'src', 'entrypoint.js',
+      );
+      assert.equal(
+        entrypoint, evalRootEntry,
+        `expected entrypoint resolved from EVAL_ROOT, got: ${entrypoint}`,
+      );
+      assert.ok(
+        fs.existsSync(entrypoint),
+        `resolved entrypoint must exist on disk: ${entrypoint}`,
+      );
+    } finally {
+      rmTmpDir(tmpDir);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // L2 — real scenario integration (gated behind SKIP_INTEGRATION)
 // ---------------------------------------------------------------------------
 

@@ -13,6 +13,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Versions follo
 
 ---
 
+## [1.5.1] — TBD
+
+### Fixed
+
+- `dir-walk.js` (`spawnScenario`) now resolves the Promptfoo entrypoint from
+  `EVAL_ROOT/node_modules/promptfoo` first, falling back to
+  `harnessRoot/node_modules/promptfoo`. When the harness is installed as a
+  dependency, npm hoists `promptfoo` to the consumer's top-level
+  `node_modules` (EVAL_ROOT), not nested under the harness package — the
+  previous harnessRoot-only resolution raised `Cannot find module
+  .../@accelerate-data/promptfoo-eval-harness/node_modules/promptfoo/...`
+  for both the dir-walk fan-out and single self-contained scenario paths.
+  Mirrors the resolution already used by `run-promptfoo-with-guard.js`.
+
+---
+
 ## [1.5.0] — TBD
 
 ### Summary

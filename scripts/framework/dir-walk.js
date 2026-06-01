@@ -99,9 +99,18 @@ function spawnScenario(scenarioDir, env, harnessRoot, options = {}) {
   }
   // Invoke Promptfoo entrypoint directly — scenarios are self-contained and
   // live outside EVAL_ROOT, so they do not go through run-promptfoo-with-guard.
-  const promptfooEntrypoint = path.join(
-    harnessRoot, 'node_modules', 'promptfoo', 'dist', 'src', 'entrypoint.js',
-  );
+  //
+  // Resolution order matters for installed (consumer) layouts: npm hoists
+  // `promptfoo` to the consumer's top-level `node_modules` (EVAL_ROOT), NOT
+  // nested under the harness package (harnessRoot). Prefer EVAL_ROOT (mirrors
+  // run-promptfoo-with-guard.js), fall back to harnessRoot for the dev repo
+  // and harness-owned scenarios where the two coincide.
+  const entrypointCandidates = [
+    path.join(EVAL_ROOT, 'node_modules', 'promptfoo', 'dist', 'src', 'entrypoint.js'),
+    path.join(harnessRoot, 'node_modules', 'promptfoo', 'dist', 'src', 'entrypoint.js'),
+  ];
+  const promptfooEntrypoint =
+    entrypointCandidates.find((c) => fs.existsSync(c)) || entrypointCandidates[0];
   const startMs = Date.now();
 
   // Isolate Promptfoo's SQLite state DB per-scenario so parallel runs don't race
