@@ -13,6 +13,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Versions follo
 
 ---
 
+## [1.5.1] — TBD
+
+### Fixed
+
+- **D1** Bridge NDJSON framing now buffers across stdout chunks (no more spurious `Malformed NDJSON` on heavy turns).
+- **D2** Bridge honors the harness-prepared `context.vars.workspace` at both the single-turn and multi-turn call-sites.
+- **D3** `openhands_sdk` wires `AgentContext` (consumer plugin skills + system-message suffix) instead of running plugin-blind.
+- **D4** `openhands_sdk` falls back to the `finish` tool's `message` when turn text is otherwise empty.
+- **D5** `opencode_cli` honors `OPENCODE_MODEL` by injecting `--model` into the run argv.
+- **D6** Directory mode resolves the `promptfoo` entrypoint across hoisted/pnpm/nested installs.
+- **D8** Directory mode spawns Promptfoo with `cwd = EVAL_ROOT` so dotenv finds `tests/evals/.env`.
+
+### Added
+
+- **D7** `AD_EVALS_INIT_TIMEOUT_MS` (default `600000`) scales the subprocess `init` handshake separately from per-turn bounds.
+
+---
+
 ## [1.5.0] — TBD
 
 ### Summary
