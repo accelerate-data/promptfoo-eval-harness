@@ -78,7 +78,7 @@ def mock_sdk_fixture():
 
 @pytest.fixture()
 def provider():
-    from provider import create
+    from scripts.framework.providers.openhands_sdk.provider import create
 
     return create()
 

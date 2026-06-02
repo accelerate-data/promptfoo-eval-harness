@@ -24,6 +24,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Versions follo
 - **D5** `opencode_cli` honors `OPENCODE_MODEL` by injecting `--model` into the run argv.
 - **D6** Directory mode resolves the `promptfoo` entrypoint across hoisted/pnpm/nested installs.
 - **D8** Directory mode spawns Promptfoo with `cwd = EVAL_ROOT` so dotenv finds `tests/evals/.env`.
+- **D9** `openhands_sdk` provider test imports its provider via the canonical `scripts.framework.providers.openhands_sdk.provider` path (matching the `claude_agent_sdk` test), so a whole-suite `pytest --import-mode=importlib` run no longer resolves the bare `provider` module to the wrong sibling and fails 15 tests.
 
 ### Added
 
