@@ -130,7 +130,7 @@ object. The codes below are the canonical set for Phase 1:
 | `BAD_CONFIG` | Bridge | `false` | Constructor config missing required field (`provider_kind`) or not an object. |
 | `BAD_INPUT` | Adapter | `false` | Malformed JSON line received on stdin, or `init.config` is not a JSON object. |
 | `SUBPROCESS_CRASH` | Bridge | `true` | Subprocess stdout closed unexpectedly, or subprocess emitted non-parseable NDJSON. |
-| `SUBPROCESS_TIMEOUT` | Bridge | `true` | IPC round-trip exceeded `AD_EVALS_SUBPROCESS_TIMEOUT_MS` (default 120 s) or `SIGTERM`/`SIGKILL` sequence was used. |
+| `SUBPROCESS_TIMEOUT` | Bridge | `true` | IPC round-trip exceeded its bound, or a `SIGTERM`/`SIGKILL` sequence was used. The `init` handshake is bounded by `AD_EVALS_INIT_TIMEOUT_MS` (default 600 s) because cold starts pay one-time costs (uv environment resolution, SDK import, model warm-up); every subsequent per-turn and `finalize` round-trip is bounded by `AD_EVALS_SUBPROCESS_TIMEOUT_MS` (default 120 s). The init bound is floored at the per-turn bound, so it can never be tighter. |
 | `UNKNOWN_SESSION` | Adapter | `false` | `session_id` in a `turn` or `finalize` request does not match any open session. Returned in `turn_ack.error`, not as a top-level `error`, so the subprocess stays alive. |
 
 All error messages are sanitized before crossing the IPC boundary (no secrets, no full

@@ -517,6 +517,60 @@ describe('_node_bridge', () => {
         `init config.workspace_root must equal vars.workspace, got: ${initWorkspaceRoot}`);
     });
 
+    test('D7: slow init within AD_EVALS_INIT_TIMEOUT_MS does not trip the per-turn bound', async () => {
+      const { EventEmitter } = require('node:events');
+      const prevTurn = process.env.AD_EVALS_SUBPROCESS_TIMEOUT_MS;
+      const prevInit = process.env.AD_EVALS_INIT_TIMEOUT_MS;
+      process.env.AD_EVALS_SUBPROCESS_TIMEOUT_MS = '40';    // tight per-turn bound
+      process.env.AD_EVALS_INIT_TIMEOUT_MS = '5000';        // generous init bound
+      const timers = [];
+      const childFactory = () => {
+        const stdin = new EventEmitter();
+        const stdout = new EventEmitter();
+        const stderr = new EventEmitter();
+        const child = new EventEmitter();
+        child.stdin = stdin;
+        child.stdout = stdout;
+        child.stderr = stderr;
+        child.exitCode = null;
+        child.kill = () => { child.exitCode = 1; };
+        child.pid = 55555;
+        stdin.end = () => {};
+        stdin.write = (data) => {
+          let msg;
+          try { msg = JSON.parse(String(data)); } catch { return true; }
+          if (msg.type === 'init') {
+            // > 40ms (per-turn) but < 5000ms (init): only the init handshake is
+            // slow. If init were governed by the per-turn bound this would time out.
+            timers.push(setTimeout(() => {
+              stdout.emit('data', Buffer.from(JSON.stringify({ type: 'init_ack', id: 'bridge-init', session_id: 'sess-d7' }) + '\n'));
+            }, 120));
+          } else if (msg.type === 'turn') {
+            stdout.emit('data', Buffer.from(JSON.stringify({ type: 'turn_ack', id: msg.id, text: 'ok', tool_calls: [], error: null, raw: {} }) + '\n'));
+          } else if (msg.type === 'finalize') {
+            stdout.emit('data', Buffer.from(JSON.stringify({ type: 'finalize_ack', id: 'bridge-final', cost_usd: 0, tokens: {}, transcript_summary: '' }) + '\n'));
+          } else if (msg.type === 'shutdown') {
+            stdout.emit('data', Buffer.from(JSON.stringify({ type: 'shutdown_ack', id: 'bridge-shutdown' }) + '\n'));
+          }
+          return true;
+        };
+        return child;
+      };
+      try {
+        await withSpawnStub(childFactory, async (makeBridge) => {
+          const provider = makeBridge({ config: makeTestConfig({ provider_label: 'd7' }) });
+          const result = await provider.callApi('hi', { vars: {} });
+          assert.ok(!String(result.error || '').toLowerCase().includes('timeout'),
+            `init should be governed by the init bound, got: ${result.error}`);
+          assert.equal(result.output, 'ok');
+        });
+      } finally {
+        timers.forEach(clearTimeout);
+        if (prevTurn === undefined) delete process.env.AD_EVALS_SUBPROCESS_TIMEOUT_MS; else process.env.AD_EVALS_SUBPROCESS_TIMEOUT_MS = prevTurn;
+        if (prevInit === undefined) delete process.env.AD_EVALS_INIT_TIMEOUT_MS; else process.env.AD_EVALS_INIT_TIMEOUT_MS = prevInit;
+      }
+    });
+
     test('openhands_sdk spawns subprocess with adapter path from KIND_REGISTRY', async () => {
       let spawnCmd = null;
       let spawnArgs = null;
@@ -668,8 +722,12 @@ describe('_node_bridge', () => {
 
     test('error envelope: SUBPROCESS_TIMEOUT when IPC response is delayed past timeout', async () => {
       // Set a very short subprocess timeout via env var; the mock child never responds.
+      // The child never sends init_ack, so the init send must also be on a tight
+      // bound — otherwise it would wait out the generous default init timeout.
       const prev = process.env.AD_EVALS_SUBPROCESS_TIMEOUT_MS;
+      const prevInit = process.env.AD_EVALS_INIT_TIMEOUT_MS;
       process.env.AD_EVALS_SUBPROCESS_TIMEOUT_MS = '50';
+      process.env.AD_EVALS_INIT_TIMEOUT_MS = '50';
       try {
         await withSpawnStub(
           () => {
@@ -705,6 +763,11 @@ describe('_node_bridge', () => {
           delete process.env.AD_EVALS_SUBPROCESS_TIMEOUT_MS;
         } else {
           process.env.AD_EVALS_SUBPROCESS_TIMEOUT_MS = prev;
+        }
+        if (prevInit === undefined) {
+          delete process.env.AD_EVALS_INIT_TIMEOUT_MS;
+        } else {
+          process.env.AD_EVALS_INIT_TIMEOUT_MS = prevInit;
         }
       }
     });

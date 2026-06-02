@@ -643,6 +643,10 @@ class HarnessBridgeProvider {
     // INNER semaphore: cap=1 per subprocess (Phase 1 single-session, spec §4.1).
     const innerLimit = makeConcurrencyGate(`inner:${kind}`, 1);
     const subprocessTimeoutMs = parseInt(process.env.AD_EVALS_SUBPROCESS_TIMEOUT_MS, 10) || 120000;
+    // D7: init can take much longer than a turn — uv resolves the SDK env, the
+    // model warms up, etc. Bound it separately so a generous init window does
+    // not relax the per-turn timeout. Never let init be tighter than a turn.
+    const initTimeoutMs = Math.max(parseInt(process.env.AD_EVALS_INIT_TIMEOUT_MS, 10) || 600000, subprocessTimeoutMs);
 
     let child = null;
     let attemptedIndex = -1;
@@ -701,7 +705,7 @@ class HarnessBridgeProvider {
 
       // Init handshake — include workspace_dir in config so the adapter can pass it to the SDK.
       const initResp = await innerLimit(() =>
-        _ipcSend(child, { type: 'init', id: 'bridge-init', config: cfgWithWorkspace }, { timeoutMs: subprocessTimeoutMs }),
+        _ipcSend(child, { type: 'init', id: 'bridge-init', config: cfgWithWorkspace }, { timeoutMs: initTimeoutMs }),
       );
       if (initResp.type === 'error') {
         const err = normalizeErr(initResp.error);
