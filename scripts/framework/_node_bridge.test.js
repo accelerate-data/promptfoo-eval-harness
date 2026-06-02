@@ -430,6 +430,52 @@ describe('_node_bridge', () => {
       };
     }
 
+    test('D1: init_ack split across two stdout chunks parses without Malformed NDJSON', async () => {
+      // The bridge sends init → turn → finalize → shutdown and matches replies
+      // by id. We answer each write, but emit the FIRST reply (init_ack) in two
+      // stdout chunks where the first chunk has no newline (a partial JSON
+      // fragment) — exactly the heavy-payload framing D1 mishandled.
+      const { EventEmitter } = require('node:events');
+      const childFactory = () => {
+        const stdin = new EventEmitter();
+        const stdout = new EventEmitter();
+        const stderr = new EventEmitter();
+        const child = new EventEmitter();
+        child.stdin = stdin;
+        child.stdout = stdout;
+        child.stderr = stderr;
+        child.exitCode = null;
+        child.kill = () => { child.exitCode = 1; };
+        child.pid = 33333;
+        stdin.end = () => {};
+        stdin.write = (data) => {
+          let msg;
+          try { msg = JSON.parse(String(data)); } catch { return true; }
+          if (msg.type === 'init') {
+            const line = JSON.stringify({ type: 'init_ack', id: 'bridge-init', session_id: 'sess-d1' }) + '\n';
+            const cut = 12; // < line.length, lands before the trailing newline
+            stdout.emit('data', Buffer.from(line.slice(0, cut)));      // no newline yet
+            setImmediate(() => stdout.emit('data', Buffer.from(line.slice(cut))));
+          } else if (msg.type === 'turn') {
+            stdout.emit('data', Buffer.from(JSON.stringify({ type: 'turn_ack', id: msg.id, text: 'BIG_PAYLOAD_OK', tool_calls: [], error: null, raw: {} }) + '\n'));
+          } else if (msg.type === 'finalize') {
+            stdout.emit('data', Buffer.from(JSON.stringify({ type: 'finalize_ack', id: 'bridge-final', cost_usd: 0, tokens: {}, transcript_summary: '' }) + '\n'));
+          } else if (msg.type === 'shutdown') {
+            stdout.emit('data', Buffer.from(JSON.stringify({ type: 'shutdown_ack', id: 'bridge-shutdown' }) + '\n'));
+          }
+          return true;
+        };
+        return child;
+      };
+      await withSpawnStub(childFactory, async (makeBridge) => {
+        const provider = makeBridge({ config: makeTestConfig({ provider_label: 'd1-chunk' }) });
+        const result = await provider.callApi('hello', { vars: {} });
+        assert.ok(!String(result.error || '').includes('Malformed NDJSON'),
+          `must not spuriously fail on a chunked line, got: ${result.error}`);
+        assert.equal(result.output, 'BIG_PAYLOAD_OK');
+      });
+    });
+
     test('openhands_sdk spawns subprocess with adapter path from KIND_REGISTRY', async () => {
       let spawnCmd = null;
       let spawnArgs = null;

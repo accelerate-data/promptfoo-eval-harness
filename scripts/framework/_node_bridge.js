@@ -362,10 +362,21 @@ function _ipcSend(child, msg, opts = {}) {
       }, timeoutMs);
     }
 
-    // Listen for one line of stdout
+    // Listen for one line of stdout. Buffer across `data` chunks until a
+    // newline arrives: a heavy turn's response line (large tool_call payload)
+    // can exceed one stdout pipe chunk, so the first chunk alone is a partial
+    // JSON fragment. Parsing it raised a spurious "Malformed NDJSON" error.
+    let stdoutBuf = '';
     function onData(chunk) {
-      const line = chunk.toString().split('\n')[0];
-      if (!line.trim()) return;
+      stdoutBuf += chunk.toString();
+      let nl = stdoutBuf.indexOf('\n');
+      // Skip leading blank lines without stalling the buffer.
+      while (nl !== -1 && !stdoutBuf.slice(0, nl).trim()) {
+        stdoutBuf = stdoutBuf.slice(nl + 1);
+        nl = stdoutBuf.indexOf('\n');
+      }
+      if (nl === -1) return; // incomplete line — wait for more chunks
+      const line = stdoutBuf.slice(0, nl);
       child.stdout.removeListener('data', onData);
       child.stdout.removeListener('end', onEnd);
       try {
