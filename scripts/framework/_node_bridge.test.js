@@ -476,6 +476,47 @@ describe('_node_bridge', () => {
       });
     });
 
+    test('D2: vars.workspace is used when cfg.workspace_root is unset (subprocess)', async () => {
+      const { EventEmitter } = require('node:events');
+      let initWorkspaceRoot;
+      const childFactory = () => {
+        const stdin = new EventEmitter();
+        const stdout = new EventEmitter();
+        const stderr = new EventEmitter();
+        const child = new EventEmitter();
+        child.stdin = stdin;
+        child.stdout = stdout;
+        child.stderr = stderr;
+        child.exitCode = null;
+        child.kill = () => { child.exitCode = 1; };
+        child.pid = 44444;
+        stdin.end = () => {};
+        stdin.write = (data) => {
+          let msg;
+          try { msg = JSON.parse(String(data)); } catch { return true; }
+          if (msg.type === 'init') {
+            initWorkspaceRoot = msg.config && msg.config.workspace_root;
+            stdout.emit('data', Buffer.from(JSON.stringify({ type: 'init_ack', id: 'bridge-init', session_id: 'sess-d2' }) + '\n'));
+          } else if (msg.type === 'turn') {
+            stdout.emit('data', Buffer.from(JSON.stringify({ type: 'turn_ack', id: msg.id, text: 'ok', tool_calls: [], error: null, raw: {} }) + '\n'));
+          } else if (msg.type === 'finalize') {
+            stdout.emit('data', Buffer.from(JSON.stringify({ type: 'finalize_ack', id: 'bridge-final', cost_usd: 0, tokens: {}, transcript_summary: '' }) + '\n'));
+          } else if (msg.type === 'shutdown') {
+            stdout.emit('data', Buffer.from(JSON.stringify({ type: 'shutdown_ack', id: 'bridge-shutdown' }) + '\n'));
+          }
+          return true;
+        };
+        return child;
+      };
+      await withSpawnStub(childFactory, async (makeBridge) => {
+        // workspace_root: '' makes cfg.workspace_root falsy so vars.workspace wins.
+        const provider = makeBridge({ config: makeTestConfig({ provider_label: 'd2', workspace_root: '' }) });
+        await provider.callApi('hi', { vars: { workspace: '/seeded/ws', case_id: 'c1' } });
+      });
+      assert.equal(initWorkspaceRoot, '/seeded/ws',
+        `init config.workspace_root must equal vars.workspace, got: ${initWorkspaceRoot}`);
+    });
+
     test('openhands_sdk spawns subprocess with adapter path from KIND_REGISTRY', async () => {
       let spawnCmd = null;
       let spawnArgs = null;

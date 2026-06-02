@@ -126,6 +126,22 @@ test('inproc workspace injection: cfg.workspace_root reaches provider.init', asy
   assert.equal(lastSession.cfg.workspace_root, expected);
 });
 
+test('D2-bis: vars.workspace reaches provider.init via the in-proc dispatch', async (t) => {
+  injectMockKind();
+  t.after(restoreMockKind);
+
+  // No workspace_root in cfg → vars.workspace must win over the mkdtemp fallback.
+  const bridge = buildBridge();
+  const result = await bridge.callApi('ignored', {
+    vars: { turns: JSON.stringify(['ping']), workspace: '/seeded/inproc-ws' },
+  });
+
+  assert.equal(result.error, undefined, `unexpected error: ${result.error}`);
+  const lastSession = makeBridge._lastInprocSession && makeBridge._lastInprocSession();
+  assert.ok(lastSession, 'expected _lastInprocSession inspector to be exposed');
+  assert.equal(lastSession.cfg.workspace_root, '/seeded/inproc-ws');
+});
+
 test('opencode_cli specialized branch still works (regression)', async (t) => {
   const prev = process.env.OPENCODE_MOCK_MODE;
   process.env.OPENCODE_MOCK_MODE = '1';

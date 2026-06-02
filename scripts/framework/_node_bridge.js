@@ -650,14 +650,23 @@ class HarnessBridgeProvider {
     let attemptedInput = '';
 
     // Create per-case workspace and forward its path in cfg.options.workspace_dir (spec §7.3).
-    // Caller-supplied cfg.workspace_root wins (codex round-2 finding #1); otherwise auto-allocate
-    // a per-case mkdtemp. Existing call sites never pass workspace_root → bit-for-bit compatible.
+    // Precedence: caller-supplied cfg.workspace_root wins (codex round-2 finding #1);
+    // else the eval harness's prepared per-row workspace from context.vars.workspace
+    // (beforeEach hooks seed fixtures, run setup_script, and symlink the plugin there,
+    // and every assertion reads that same dir) — without this the SDK agent runs in an
+    // empty auto-allocated .tmp dir while assertions check the seeded hook workspace;
+    // else auto-allocate a per-case mkdtemp. Existing call sites that set neither and
+    // pass no vars.workspace remain bit-for-bit compatible.
     const runId = process.env.AD_EVALS_RUN_ID || '';
     const caseId = cfg.case_id || context?.vars?.case_id || '';
+    const varsWorkspace =
+      typeof context?.vars?.workspace === 'string' && context.vars.workspace
+        ? context.vars.workspace
+        : null;
     const workspaceDir =
       typeof cfg.workspace_root === 'string' && cfg.workspace_root
         ? cfg.workspace_root
-        : _ensureWorkspace(runId, caseId);
+        : varsWorkspace || _ensureWorkspace(runId, caseId);
     // Thread the planned turn count through cfg.extra so providers can branch
     // on it at init() time (Phase 10 / VD-2174-9). Existing providers that
     // ignore cfg.extra.total_turns are unaffected.
@@ -819,13 +828,22 @@ class HarnessBridgeProvider {
       };
     }
 
-    // Caller-supplied cfg.workspace_root wins (codex round-2 finding #1); fall back to mkdtemp.
+    // Precedence mirrors the single-turn callApi path (D2): caller-supplied
+    // cfg.workspace_root wins; else the eval harness's prepared per-row
+    // workspace from context.vars.workspace (beforeEach hooks seed fixtures,
+    // run setup_script, and symlink the plugin there); else auto-allocate a
+    // per-case mkdtemp. Without honoring vars.workspace a seeded multi-turn case
+    // would run in an empty .tmp dir while assertions read the hook workspace.
     const runId = process.env.AD_EVALS_RUN_ID || '';
     const caseId = cfg.case_id || context?.vars?.case_id || '';
+    const varsWorkspace =
+      typeof context?.vars?.workspace === 'string' && context.vars.workspace
+        ? context.vars.workspace
+        : null;
     const workspaceDir =
       typeof cfg.workspace_root === 'string' && cfg.workspace_root
         ? cfg.workspace_root
-        : _ensureWorkspace(runId, caseId);
+        : varsWorkspace || _ensureWorkspace(runId, caseId);
     const cfgWithWorkspace = { ...cfg, workspace_root: workspaceDir };
 
     // Resolve + cache provider instance once per kind.
