@@ -156,7 +156,10 @@ function spawnScenario(scenarioDir, env, harnessRoot, options = {}) {
     const child = spawnImpl(process.execPath, [promptfooEntrypoint, 'eval', '--no-cache', '-c', configPath, ...extraArgs], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: childEnv,
-      cwd: harnessRoot,
+      // cwd = EVAL_ROOT so Promptfoo's dotenv auto-load finds tests/evals/.env,
+      // matching run-promptfoo-with-guard.js. configPath is absolute, so config
+      // resolution is unaffected. (D8 — no framework-level dotenv loader added.)
+      cwd: EVAL_ROOT,
     });
 
     child.stdout.on('data', (chunk) => {

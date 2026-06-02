@@ -306,9 +306,10 @@ describe('spawnScenario L1 injectProviders', () => {
 describe('spawnScenario L1 extraArgs forwarding', () => {
   /** Fake spawn that records argv and returns a child stub that closes with code 0. */
   function fakeSpawn(record) {
-    return (cmd, args) => {
+    return (cmd, args, opts) => {
       record.cmd = cmd;
       record.args = args;
+      record.opts = opts;          // D8: capture spawn options (cwd/env)
       const handlers = {};
       const child = {
         stdout: { on: () => {} },
@@ -388,6 +389,20 @@ describe('spawnScenario L1 extraArgs forwarding', () => {
       await spawnScenario(tmpDir, process.env, '/harness-root', { spawn: fakeSpawn(record) });
       const cIdx = record.args.indexOf('-c');
       assert.equal(record.args.length, cIdx + 2, 'argv must end right after the config path when no extraArgs');
+    } finally {
+      rmTmpDir(tmpDir);
+    }
+  });
+
+  test('D8: scenario child is spawned with cwd = EVAL_ROOT (so Promptfoo dotenv finds tests/evals/.env)', async () => {
+    const { spawnScenario } = require('./dir-walk');
+    const { EVAL_ROOT } = require('./roots');
+    const tmpDir = makeTmpDir();
+    try {
+      fs.writeFileSync(path.join(tmpDir, 'promptfooconfig.json'), '{}');
+      const record = {};
+      await spawnScenario(tmpDir, process.env, '/harness-root', { spawn: fakeSpawn(record) });
+      assert.equal(record.opts.cwd, EVAL_ROOT, 'directory mode must spawn promptfoo with cwd = EVAL_ROOT');
     } finally {
       rmTmpDir(tmpDir);
     }
