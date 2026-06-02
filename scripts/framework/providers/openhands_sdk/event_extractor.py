@@ -112,8 +112,24 @@ class EventExtractor:
                 )
             )
 
+        text = "".join(self._text_chunks)
+        if not text.strip():
+            # OpenHands agents commonly end a turn via the `finish` tool rather
+            # than a trailing assistant MessageEvent; the finish action's
+            # `message` argument IS the agent's canonical final response. Without
+            # this fallback the turn (and thus the provider output) is empty even
+            # though the agent did summarize — surface it as the turn text.
+            for tc in reversed(self._tool_calls):
+                if tc.get("name") != "finish":
+                    continue
+                args = tc.get("arguments") or {}
+                msg = args.get("message") if isinstance(args, dict) else None
+                if msg:
+                    text = msg if isinstance(msg, str) else str(msg)
+                break
+
         return TurnResult(
-            text="".join(self._text_chunks),
+            text=text,
             tool_calls=tool_call_records,
             error=self._error,
         )

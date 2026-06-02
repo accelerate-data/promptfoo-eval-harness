@@ -375,3 +375,33 @@ class TestTruncateHelper:
 
     def test_empty_string(self) -> None:
         assert _truncate("") == ""
+
+
+class TestFinishToolFallback:
+    """D4 — when the agent ends a turn via the `finish` tool (no trailing
+    assistant MessageEvent), the finish action's `message` arg IS the canonical
+    final response; end_turn().text must surface it instead of "" ."""
+
+    def test_empty_text_falls_back_to_finish_message(self) -> None:
+        # finish ActionEvent only — no agent MessageEvent text.
+        events = [
+            ActionEvent(
+                call_id="f1",
+                tool_name="finish",
+                arguments={"message": "All done: summary here."},
+            ),
+        ]
+        result = _run_fixture(events)
+        assert result.text == "All done: summary here."
+
+    def test_nonempty_text_not_overwritten_by_finish(self) -> None:
+        events = [
+            MessageEvent(source="agent", content=[TextContent("real answer")]),
+            ActionEvent(
+                call_id="f2",
+                tool_name="finish",
+                arguments={"message": "ignored"},
+            ),
+        ]
+        result = _run_fixture(events)
+        assert result.text == "real answer"
