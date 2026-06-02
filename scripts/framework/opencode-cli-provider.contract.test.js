@@ -296,29 +296,36 @@ describe('Section 3 — §7.4 five behaviors', () => {
 
   // B2: argv shape
   test('B2: argv shape — opencode run --agent --dir --format --log-level <prompt>', async () => {
-    const { init, turn } = loadProvider();
-    const runner = makeRecordingRunner('argv snapshot output');
-    const session = await init({
-      ...VALID_CONFIG,
-      agent: 'eval_standard',
-      format: 'json',
-      log_level: 'WARN',
-      _runner: runner,
-    });
-    await turn(session, 'the prompt text');
-    assert.ok(runner.calls.length > 0, 'runner must be called');
-    const { args } = runner.calls[0];
-    // Snapshot: ['run', '--agent', 'eval_standard', '--dir', <projectDir>, '--format', 'json', '--log-level', 'WARN', 'the prompt text']
-    assert.strictEqual(args[0], 'run', 'first arg must be "run"');
-    assert.strictEqual(args[1], '--agent', 'second arg must be "--agent"');
-    assert.strictEqual(args[2], 'eval_standard', 'third arg must be agent name');
-    assert.strictEqual(args[3], '--dir', 'fourth arg must be "--dir"');
-    // args[4] is the resolved project dir
-    assert.strictEqual(args[5], '--format', 'sixth arg must be "--format"');
-    assert.strictEqual(args[6], 'json', 'seventh arg must be format value');
-    assert.strictEqual(args[7], '--log-level', 'eighth arg must be "--log-level"');
-    assert.strictEqual(args[8], 'WARN', 'ninth arg must be log_level value');
-    assert.strictEqual(args[args.length - 1], 'the prompt text', 'last arg must be the prompt');
+    const prevModel = process.env.OPENCODE_MODEL;
+    delete process.env.OPENCODE_MODEL; // D5: keep positional argv stable
+    try {
+      const { init, turn } = loadProvider();
+      const runner = makeRecordingRunner('argv snapshot output');
+      const session = await init({
+        ...VALID_CONFIG,
+        agent: 'eval_standard',
+        format: 'json',
+        log_level: 'WARN',
+        _runner: runner,
+      });
+      await turn(session, 'the prompt text');
+      assert.ok(runner.calls.length > 0, 'runner must be called');
+      const { args } = runner.calls[0];
+      // Snapshot: ['run', '--agent', 'eval_standard', '--dir', <projectDir>, '--format', 'json', '--log-level', 'WARN', 'the prompt text']
+      assert.strictEqual(args[0], 'run', 'first arg must be "run"');
+      assert.strictEqual(args[1], '--agent', 'second arg must be "--agent"');
+      assert.strictEqual(args[2], 'eval_standard', 'third arg must be agent name');
+      assert.strictEqual(args[3], '--dir', 'fourth arg must be "--dir"');
+      // args[4] is the resolved project dir
+      assert.strictEqual(args[5], '--format', 'sixth arg must be "--format"');
+      assert.strictEqual(args[6], 'json', 'seventh arg must be format value');
+      assert.strictEqual(args[7], '--log-level', 'eighth arg must be "--log-level"');
+      assert.strictEqual(args[8], 'WARN', 'ninth arg must be log_level value');
+      assert.strictEqual(args[args.length - 1], 'the prompt text', 'last arg must be the prompt');
+    } finally {
+      if (prevModel === undefined) delete process.env.OPENCODE_MODEL;
+      else process.env.OPENCODE_MODEL = prevModel;
+    }
   });
 
   test('B2: --print-logs appended when print_logs=true', async () => {
@@ -337,6 +344,42 @@ describe('Section 3 — §7.4 five behaviors', () => {
     await turn(session, 'hello');
     const { args } = runner.calls[0];
     assert.ok(!args.includes('--print-logs'), 'argv must NOT include --print-logs when print_logs=false');
+  });
+
+  // D5: OPENCODE_MODEL → `--model <value>` injected right after `run`
+  test('D5: OPENCODE_MODEL injects `--model <value>` right after `run`', async () => {
+    const { init, turn } = loadProvider();
+    const prev = process.env.OPENCODE_MODEL;
+    process.env.OPENCODE_MODEL = 'anthropic/claude-sonnet-4-6';
+    const runner = makeRecordingRunner('ok');
+    try {
+      const session = await init({ ...VALID_CONFIG, _runner: runner });
+      await turn(session, 'the prompt text');
+      assert.ok(runner.calls.length > 0, 'runner must be called');
+      const { args } = runner.calls[0];
+      const runIdx = args.indexOf('run');
+      assert.ok(runIdx >= 0, 'argv must contain "run"');
+      assert.strictEqual(args[runIdx + 1], '--model', '--model must follow "run"');
+      assert.strictEqual(args[runIdx + 2], 'anthropic/claude-sonnet-4-6', 'model value must match OPENCODE_MODEL');
+    } finally {
+      if (prev === undefined) delete process.env.OPENCODE_MODEL;
+      else process.env.OPENCODE_MODEL = prev;
+    }
+  });
+
+  test('D5: argv unchanged when OPENCODE_MODEL is unset (back-compat)', async () => {
+    const { init, turn } = loadProvider();
+    const prev = process.env.OPENCODE_MODEL;
+    delete process.env.OPENCODE_MODEL;
+    const runner = makeRecordingRunner('ok');
+    try {
+      const session = await init({ ...VALID_CONFIG, _runner: runner });
+      await turn(session, 'the prompt text');
+      const { args } = runner.calls[0];
+      assert.strictEqual(args[args.indexOf('run') + 1], '--agent', 'no --model when env unset');
+    } finally {
+      if (prev !== undefined) process.env.OPENCODE_MODEL = prev;
+    }
   });
 
   // B3: exit-code mapping

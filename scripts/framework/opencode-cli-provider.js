@@ -166,8 +166,14 @@ async function callWithEmptyOutputRetries(prompt, config, runner, callOptions) {
   const projectDir = path.resolve(EVAL_ROOT, config.project_dir);
 
   // B2: argv shape — must be preserved byte-for-byte (§7.4)
+  // OPENCODE_MODEL (consumer .env) overrides the per-agent model pinned in
+  // opencode.json for this run; opencode validates the static config model at
+  // load time regardless, so the override only swaps the run model, not the
+  // config-load floor. Omitted when unset so the opencode.json default applies.
+  const modelOverride = process.env.OPENCODE_MODEL;
   const args = [
     'run',
+    ...(modelOverride ? ['--model', modelOverride] : []),
     '--agent',
     config.agent,
     '--dir',

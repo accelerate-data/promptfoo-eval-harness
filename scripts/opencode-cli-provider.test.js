@@ -6,6 +6,8 @@ const OpenCodeCliProvider = require('./framework/opencode-cli-provider');
 
 test('OpenCodeCliProvider invokes opencode run with the configured eval agent', async () => {
   const previousStateHome = process.env.XDG_STATE_HOME;
+  const previousModel = process.env.OPENCODE_MODEL; // D5: keep full-array argv stable
+  delete process.env.OPENCODE_MODEL;
   delete process.env.XDG_STATE_HOME;
   const calls = [];
   try {
@@ -45,6 +47,8 @@ test('OpenCodeCliProvider invokes opencode run with the configured eval agent', 
     if (previousStateHome !== undefined) {
       process.env.XDG_STATE_HOME = previousStateHome;
     }
+    if (previousModel === undefined) delete process.env.OPENCODE_MODEL;
+    else process.env.OPENCODE_MODEL = previousModel;
   }
 });
 
@@ -80,37 +84,44 @@ test('OpenCodeCliProvider preserves framework-exported OpenCode state', async ()
 });
 
 test('OpenCodeCliProvider includes --print-logs only when configured', async () => {
-  const calls = [];
-  const provider = new OpenCodeCliProvider({
-    config: {
-      agent: 'eval_standard',
-      opencode_config: '/suite/opencode.json',
-      project_dir: '/repo',
-      format: 'json',
-      log_level: 'DEBUG',
-      print_logs: true,
-    },
-    runner: async (args, options) => {
-      calls.push({ args, options });
-      return 'status output';
-    },
-  });
+  const previousModel = process.env.OPENCODE_MODEL; // D5: keep full-array argv stable
+  delete process.env.OPENCODE_MODEL;
+  try {
+    const calls = [];
+    const provider = new OpenCodeCliProvider({
+      config: {
+        agent: 'eval_standard',
+        opencode_config: '/suite/opencode.json',
+        project_dir: '/repo',
+        format: 'json',
+        log_level: 'DEBUG',
+        print_logs: true,
+      },
+      runner: async (args, options) => {
+        calls.push({ args, options });
+        return 'status output';
+      },
+    });
 
-  await provider.callApi('prompt');
+    await provider.callApi('prompt');
 
-  assert.deepEqual(calls[0].args, [
-    'run',
-    '--agent',
-    'eval_standard',
-    '--dir',
-    '/repo',
-    '--format',
-    'json',
-    '--log-level',
-    'DEBUG',
-    '--print-logs',
-    'prompt',
-  ]);
+    assert.deepEqual(calls[0].args, [
+      'run',
+      '--agent',
+      'eval_standard',
+      '--dir',
+      '/repo',
+      '--format',
+      'json',
+      '--log-level',
+      'DEBUG',
+      '--print-logs',
+      'prompt',
+    ]);
+  } finally {
+    if (previousModel === undefined) delete process.env.OPENCODE_MODEL;
+    else process.env.OPENCODE_MODEL = previousModel;
+  }
 });
 
 test('OpenCodeCliProvider retries empty CLI output when configured', async () => {
