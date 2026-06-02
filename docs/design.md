@@ -385,11 +385,15 @@ Promptfoo bridge; it returns a plain `{id, label, callApi}` provider.
 ### OpenCode CLI: Base + Sibling
 
 `scripts/framework/opencode-cli-provider.js` is the locked §7.4 contract.
-The framework refuses ANY edit — even a `module.exports` re-export — and
+The framework refuses casual edits — even a `module.exports` re-export — and
 the byte-identity guard
-(`opencode-cli-plugin-provider.test.js` → "base file ... is byte-identical")
-fails if the parent SHA stored in `tests/_fixtures/phase-04-parent.sha`
-no longer matches `HEAD` for that file.
+(`opencode-cli-plugin-provider.test.js` → "base file ... is byte-identical
+to the locked baseline SHA") fails if the SHA stored in
+`tests/_fixtures/phase-04-parent.sha` no longer matches `HEAD` for that file.
+The stamp is re-pinned ONLY on a deliberate, reviewed framework amendment
+(plan + review + version bump), never to silence accidental drift. It was
+re-baselined from the phase-04 parent to the D5 commit (VD-2298) when the
+optional `--model` injection below was added.
 
 Plugin features live in a **sibling**, not a subclass:
 

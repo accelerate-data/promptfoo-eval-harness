@@ -304,7 +304,12 @@ test('load_local_env does NOT overwrite pre-existing process.env keys', () => {
   }
 });
 
-test('base file scripts/framework/opencode-cli-provider.js is byte-identical from phase-04 parent SHA', () => {
+test('base file scripts/framework/opencode-cli-provider.js is byte-identical to the locked baseline SHA', () => {
+  // The stamp freezes the §7.4 base contract against ACCIDENTAL drift. It is
+  // re-pinned only on a deliberate, reviewed framework amendment: it was bumped
+  // from the phase-04 parent to the D5 commit (VD-2298) when OPENCODE_MODEL
+  // `--model` injection was added to the base argv. Any edit NOT folded into the
+  // pinned SHA still trips this guard.
   const shaFile = path.join(EVAL_ROOT, 'tests', '_fixtures', 'phase-04-parent.sha');
   if (!fs.existsSync(shaFile)) {
     // If the stamp is missing we cannot enforce — skip rather than false-negative.
@@ -320,7 +325,7 @@ test('base file scripts/framework/opencode-cli-provider.js is byte-identical fro
     );
   } catch (err) {
     assert.fail(
-      `Base file scripts/framework/opencode-cli-provider.js diverged from phase-04 parent ${sha}:\n${err.stdout || ''}${err.stderr || ''}`,
+      `Base file scripts/framework/opencode-cli-provider.js diverged from locked baseline ${sha}:\n${err.stdout || ''}${err.stderr || ''}`,
     );
   }
 });
