@@ -20,6 +20,45 @@ const {
 } = require('./resolve-promptfoo-config');
 const { EVAL_ROOT } = require('./roots');
 
+/**
+ * Resolve the Promptfoo entrypoint across install layouts.
+ *
+ * promptfoo is a dependency of this harness, but when the consumer also
+ * declares it (same version) npm hoists it to the consumer's node_modules —
+ * so it is NOT always nested under harnessRoot. The single-config guard path
+ * already resolves it under EVAL_ROOT; directory mode must do the same or it
+ * breaks with MODULE_NOT_FOUND on hoisted installs. Probe the consumer root
+ * first, then the harness package, then fall back to Node resolution
+ * (pnpm / nested layouts).
+ *
+ * @param {string} harnessRoot - Harness package root.
+ * @param {string} [evalRoot=EVAL_ROOT] - Consumer eval root (override for tests).
+ * @returns {string} Absolute path to promptfoo's dist/src/entrypoint.js.
+ */
+function resolvePromptfooEntrypoint(harnessRoot, evalRoot = EVAL_ROOT) {
+  const rel = ['node_modules', 'promptfoo', 'dist', 'src', 'entrypoint.js'];
+  const candidates = [
+    path.join(evalRoot, ...rel),
+    path.join(harnessRoot, ...rel),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  // Last resort: derive the package root from Node's module resolution, which
+  // handles non-flat layouts (pnpm, nested) the existsSync probes miss.
+  try {
+    let dir = path.dirname(require.resolve('promptfoo', { paths: [harnessRoot] }));
+    while (dir !== path.dirname(dir) && path.basename(dir) !== 'promptfoo') {
+      dir = path.dirname(dir);
+    }
+    return path.join(dir, 'dist', 'src', 'entrypoint.js');
+  } catch {
+    return candidates[0];
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Scenario enumeration
 // ---------------------------------------------------------------------------
@@ -99,9 +138,7 @@ function spawnScenario(scenarioDir, env, harnessRoot, options = {}) {
   }
   // Invoke Promptfoo entrypoint directly — scenarios are self-contained and
   // live outside EVAL_ROOT, so they do not go through run-promptfoo-with-guard.
-  const promptfooEntrypoint = path.join(
-    harnessRoot, 'node_modules', 'promptfoo', 'dist', 'src', 'entrypoint.js',
-  );
+  const promptfooEntrypoint = resolvePromptfooEntrypoint(harnessRoot);
   const startMs = Date.now();
 
   // Isolate Promptfoo's SQLite state DB per-scenario so parallel runs don't race
@@ -224,4 +261,4 @@ async function runScenarios(
   return { results, totalDurationMs, aggregatedExitCode };
 }
 
-module.exports = { walkScenarios, runScenarios, spawnScenario };
+module.exports = { walkScenarios, runScenarios, spawnScenario, resolvePromptfooEntrypoint };

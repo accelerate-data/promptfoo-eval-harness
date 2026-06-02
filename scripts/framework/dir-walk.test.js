@@ -421,3 +421,41 @@ describe('runScenarios L2 integration (SKIP_INTEGRATION to run)', { skip: SKIP_I
     assert.equal(aggregatedExitCode, 0);
   }, { timeout: 120_000 });
 });
+
+describe('resolvePromptfooEntrypoint (D6)', () => {
+  const REL = ['node_modules', 'promptfoo', 'dist', 'src', 'entrypoint.js'];
+
+  function seedEntrypoint(root) {
+    const entry = path.join(root, ...REL);
+    fs.mkdirSync(path.dirname(entry), { recursive: true });
+    fs.writeFileSync(entry, '// fake entrypoint');
+    return entry;
+  }
+
+  test('prefers evalRoot when it has promptfoo (hoisted install)', () => {
+    const { resolvePromptfooEntrypoint } = require('./dir-walk');
+    const evalRoot = makeTmpDir();
+    const harnessRoot = makeTmpDir();
+    try {
+      const evalEntry = seedEntrypoint(evalRoot);
+      seedEntrypoint(harnessRoot); // both present → evalRoot must win
+      assert.equal(resolvePromptfooEntrypoint(harnessRoot, evalRoot), evalEntry);
+    } finally {
+      rmTmpDir(evalRoot);
+      rmTmpDir(harnessRoot);
+    }
+  });
+
+  test('falls back to harnessRoot when evalRoot lacks promptfoo', () => {
+    const { resolvePromptfooEntrypoint } = require('./dir-walk');
+    const evalRoot = makeTmpDir();    // empty — no promptfoo
+    const harnessRoot = makeTmpDir();
+    try {
+      const harnessEntry = seedEntrypoint(harnessRoot);
+      assert.equal(resolvePromptfooEntrypoint(harnessRoot, evalRoot), harnessEntry);
+    } finally {
+      rmTmpDir(evalRoot);
+      rmTmpDir(harnessRoot);
+    }
+  });
+});
