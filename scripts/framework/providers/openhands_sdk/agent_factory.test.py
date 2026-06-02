@@ -371,3 +371,96 @@ class TestEnvOverrides:
         cfg = self._make_cfg(model="claude-sonnet-4-6")
         agent, _ = build_agent(cfg, _MockToolRegistry, _MockModelResolver)
         assert agent.llm.model == "anthropic/claude-sonnet-4-6"
+
+
+class TestAgentContextWiring:
+    """D3 — build_agent must wire AgentContext (plugin skills + orientation
+    suffix). Without it the OpenHands agent runs plugin-blind: the SDK does not
+    auto-load the .openhands/microagents symlink, so skills never surface via
+    the invoke_skill tool."""
+
+    def _make_cfg(self, **kwargs):
+        from _contract import ProviderConfig
+
+        defaults = dict(
+            provider_kind="openhands_sdk",
+            model="claude-sonnet-4-6",
+            sdk_version="1.22.1",
+            workspace_root="/tmp/ws",
+            tools=[],
+            permissions={},
+            timeout_per_turn_s=300,
+        )
+        defaults.update(kwargs)
+        return ProviderConfig(**defaults)
+
+    def _capturing_agent(self, monkeypatch):
+        """Replace openhands.sdk.Agent with a kwargs-capturing class; return the
+        capture dict (the factory's lazy `from openhands.sdk import Agent`
+        resolves to this patched module attribute)."""
+        captured = {}
+
+        class _CapturingAgent:
+            def __init__(self, llm, tools=None, system_prompt=None, **kwargs):
+                captured["llm"] = llm
+                captured["tools"] = tools
+                captured["system_prompt"] = system_prompt
+                captured["kwargs"] = kwargs
+
+        monkeypatch.setattr(sys.modules["openhands.sdk"], "Agent", _CapturingAgent)
+        return captured
+
+    def _install_context_module(self, monkeypatch):
+        """Inject a mock openhands.sdk.context with AgentContext +
+        load_skills_from_dir (the D3 fix's real import target)."""
+        ctx_mod = types.ModuleType("openhands.sdk.context")
+
+        class _MockAgentContext:
+            def __init__(self, skills=None, system_message_suffix=None):
+                self.skills = skills or []
+                self.system_message_suffix = system_message_suffix
+
+        calls = {"dirs": []}
+
+        def _load_skills_from_dir(d):
+            calls["dirs"].append(d)
+            # Real shape: a tuple of name-keyed dicts; the fix flattens .values().
+            return ({"skill_a": object(), "skill_b": object()},)
+
+        ctx_mod.AgentContext = _MockAgentContext
+        ctx_mod.load_skills_from_dir = _load_skills_from_dir
+        monkeypatch.setitem(sys.modules, "openhands.sdk.context", ctx_mod)
+        return calls
+
+    def test_agent_context_passed_when_suffix_present(self, monkeypatch) -> None:
+        from agent_factory import build_agent
+
+        captured = self._capturing_agent(monkeypatch)
+        self._install_context_module(monkeypatch)
+        cfg = self._make_cfg(extra={"system_message_suffix": "ORIENTATION"})
+        build_agent(cfg, _MockToolRegistry, _MockModelResolver)
+        ctx = captured["kwargs"].get("agent_context")
+        assert ctx is not None, "agent_context kwarg must be passed when suffix present"
+        assert ctx.system_message_suffix == "ORIENTATION"
+
+    def test_skills_dir_loads_and_flattens(self, monkeypatch) -> None:
+        from agent_factory import build_agent
+
+        captured = self._capturing_agent(monkeypatch)
+        calls = self._install_context_module(monkeypatch)
+        cfg = self._make_cfg(extra={"skills_dir": "/plugins/skills"})
+        build_agent(cfg, _MockToolRegistry, _MockModelResolver)
+        assert calls["dirs"] == ["/plugins/skills"], "load_skills_from_dir must receive skills_dir"
+        ctx = captured["kwargs"].get("agent_context")
+        assert ctx is not None
+        assert len(ctx.skills) == 2, "skills from each name-keyed group must be flattened"
+
+    def test_no_agent_context_when_extra_empty(self, monkeypatch) -> None:
+        from agent_factory import build_agent
+
+        captured = self._capturing_agent(monkeypatch)
+        # Deliberately do NOT install openhands.sdk.context — the fix must not
+        # import it when neither skills_dir nor suffix is present.
+        cfg = self._make_cfg(extra={})
+        build_agent(cfg, _MockToolRegistry, _MockModelResolver)
+        assert "agent_context" not in captured["kwargs"], "no agent_context kwarg when extra empty"

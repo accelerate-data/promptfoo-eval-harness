@@ -158,11 +158,52 @@ def build_agent(
 
     # --- Agent construction ----------------------------------------------
     system_prompt: str | None = cfg.extra.get("system_prompt")
-    agent = Agent(
-        llm=llm,
-        tools=tools,
-        system_prompt=system_prompt,
+
+    # Build an AgentContext from consumer-provided plugin skills + an
+    # orientation suffix. Without this a bare Agent runs plugin-blind: the
+    # SDK does not auto-load the .openhands/microagents symlink, so skills must
+    # be injected explicitly. AgentContext.skills surfaces them via the
+    # invoke_skill tool, and system_message_suffix is appended to the base
+    # system prompt (system_prompt stays None so the base j2 prompt — and its
+    # tool scaffolding — is preserved rather than replaced).
+    agent_context = None
+    skills_dir = cfg.extra.get("skills_dir") if cfg.extra else None
+    system_message_suffix = (
+        cfg.extra.get("system_message_suffix") if cfg.extra else None
     )
+    if skills_dir or system_message_suffix:
+        try:
+            from openhands.sdk.context import (  # noqa: PLC0415
+                AgentContext,
+                load_skills_from_dir,
+            )
+
+            skills: list[Any] = []
+            if skills_dir:
+                # load_skills_from_dir returns a tuple of name-keyed dicts;
+                # flatten every group into a single skills list.
+                for group in load_skills_from_dir(skills_dir):
+                    skills.extend(group.values())
+            agent_context = AgentContext(
+                skills=skills,
+                system_message_suffix=system_message_suffix,
+            )
+        except ProviderRuntimeError:
+            raise
+        except Exception as exc:
+            raise ProviderRuntimeError(
+                code="sdk_error",
+                message=f"agent context build failed: {exc}",
+            ) from exc
+
+    agent_kwargs: dict[str, Any] = {
+        "llm": llm,
+        "tools": tools,
+        "system_prompt": system_prompt,
+    }
+    if agent_context is not None:
+        agent_kwargs["agent_context"] = agent_context
+    agent = Agent(**agent_kwargs)
 
     # --- Conversation construction ---------------------------------------
     # workspace_root from cfg; delete_on_close=False — bridge owns cleanup (§7.3).
