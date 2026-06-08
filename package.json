@@ -37,7 +37,7 @@
     "@openai/codex-sdk": "0.137.0",
     "js-yaml": "^4.1.1",
     "p-limit": "^7.3.0",
-    "promptfoo": "0.121.13",
+    "promptfoo": "0.121.15",
     "smol-toml": "^1.6.1",
     "ws": "^8.18.0"
   },
