@@ -5,6 +5,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # p-limit v4+ is ESM-only; this package is CJS. See VD-3796 and the comment in scripts/framework/concurrency.js.
     ignore:
       - dependency-name: "p-limit"
         update-types: ["version-update:semver-major"]

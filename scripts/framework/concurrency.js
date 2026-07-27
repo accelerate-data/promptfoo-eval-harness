@@ -23,7 +23,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-// p-limit is pinned to ^3.1.0 (last CJS-compatible major) because every call site here is
+// p-limit is held at ^3.1.0 (last CJS-compatible major) because every call site here is
 // synchronous; p-limit v4+ is ESM-only and would require converting every caller to async.
 // See VD-3796. Revisit only if a v4+-only feature becomes genuinely needed.
 const pLimit = require('p-limit');
@@ -33,7 +33,7 @@ const { parse } = require('smol-toml');
 // OUTER semaphore — caps subprocess spawns / cross-process dir-walk
 // ---------------------------------------------------------------------------
 
-/** @type {import('p-limit').LimitFunction | null} */
+/** @type {import('p-limit').Limit | null} */
 let _outerLimit = null;
 
 /**
@@ -41,7 +41,7 @@ let _outerLimit = null;
  * Cap = AD_EVALS_OUTER_CONCURRENCY ?? os.cpus().length.
  * Throws at call time if the env var is set to an invalid value.
  *
- * @returns {import('p-limit').LimitFunction}
+ * @returns {import('p-limit').Limit}
  */
 function getOuterLimit() {
   if (_outerLimit === null) {
@@ -73,7 +73,7 @@ function _resetOuterLimit() {
 // INNER (global) semaphore — caps concurrent callApi invocations at the bridge
 // ---------------------------------------------------------------------------
 
-/** @type {import('p-limit').LimitFunction | null} */
+/** @type {import('p-limit').Limit | null} */
 let _globalLimit = null;
 
 /**
@@ -81,7 +81,7 @@ let _globalLimit = null;
  * Cap = AD_EVALS_MAX_CONCURRENCY ?? 4 (matches Promptfoo --max-concurrency default).
  * Throws at call time if the env var is set to an invalid value.
  *
- * @returns {import('p-limit').LimitFunction}
+ * @returns {import('p-limit').Limit}
  */
 function getGlobalLimit() {
   if (_globalLimit === null) {
@@ -128,7 +128,7 @@ function _resetAllLimits() {
 // regardless of per-kind caps. Per-kind caps may only further restrict.
 // ---------------------------------------------------------------------------
 
-/** @type {Map<string, import('p-limit').LimitFunction>} */
+/** @type {Map<string, import('p-limit').Limit>} */
 const _perKindLimits = new Map();
 
 /** @type {Record<string, number> | null} */
@@ -278,7 +278,7 @@ async function acquire(kind) {
  * caller invokes when done. The slot is held for the lifetime of the
  * returned release fn; calling it frees the slot.
  *
- * @param {import('p-limit').LimitFunction} limit
+ * @param {import('p-limit').Limit} limit
  * @returns {Promise<() => void>}
  */
 function _acquireSlot(limit) {
@@ -304,7 +304,7 @@ function _acquireSlot(limit) {
  *
  * @param {string} _name  - Descriptive name (for debugging; not enforced).
  * @param {number} max    - Maximum number of concurrent tasks.
- * @returns {import('p-limit').LimitFunction}
+ * @returns {import('p-limit').Limit}
  */
 function makeConcurrencyGate(_name, max) {
   return pLimit(max);
@@ -316,7 +316,7 @@ function makeConcurrencyGate(_name, max) {
  *
  * @param {string} label  - Human-readable label for diagnostics.
  * @param {number} max    - Maximum number of concurrent tasks.
- * @returns {import('p-limit').LimitFunction & { label: string }}
+ * @returns {import('p-limit').Limit & { label: string }}
  */
 function spawn(label, max) {
   const gate = pLimit(max);
