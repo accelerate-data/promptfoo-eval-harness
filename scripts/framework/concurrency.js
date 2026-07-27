@@ -23,6 +23,9 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+// p-limit is pinned to ^3.1.0 (last CJS-compatible major) because every call site here is
+// synchronous; p-limit v4+ is ESM-only and would require converting every caller to async.
+// See VD-3796. Revisit only if a v4+-only feature becomes genuinely needed.
 const pLimit = require('p-limit');
 const { parse } = require('smol-toml');
 
