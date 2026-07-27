@@ -167,6 +167,12 @@ function _isV1RawShape(raw) {
 function resolveConfigFile(relativePath, { rawTierConfig = null } = {}) {
   const normalizedPath = normalizeConfigPath(relativePath);
   const parsed = readYaml(normalizedPath);
+  if (parsed?.providers) {
+    throw new Error(
+      `${normalizedPath} declares its own "providers" array, which the framework silently ` +
+        'discards — remove it and rely on metadata.eval_tier (see docs/design.md § Package Contract).',
+    );
+  }
   const evalTier = parsed?.metadata?.eval_tier;
   if (!evalTier) {
     throw new Error(`${normalizedPath} is missing metadata.eval_tier`);

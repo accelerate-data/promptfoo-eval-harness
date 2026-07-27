@@ -1,0 +1,14 @@
+{
+  "description": "VD-3792 fixture: a package that (incorrectly) declares its own providers array alongside metadata.eval_tier.",
+  "metadata": { "eval_tier": "light" },
+  "providers": [
+    { "id": "file://../../scripts/openhands-provider.js" }
+  ],
+  "prompts": ["{{prompt}}"],
+  "tests": [
+    {
+      "vars": { "prompt": "hello" },
+      "assert": []
+    }
+  ]
+}

@@ -82,6 +82,32 @@ Each eval package lives under `tests/evals/packages/<package-name>/` and owns:
 
 Package configs must define `metadata.eval_tier` and must not define `providers`. Provider wiring is injected by `scripts/framework/resolve-promptfoo-config.js` from `config/eval-tiers.toml`. This holds for multi-turn packages too: a v0-tier package whose tests declare `vars.turns` auto-routes to the SDK bridge using the top-level `[multiturn]` block (the single-turn tier CLI provider cannot drive `vars.turns`), so it still declares only `metadata.eval_tier`. See `docs/setup.md` → "Tier-driven multi-turn".
 
+`resolveConfigFile()` enforces this contract: a package config that declares its own `providers` throws immediately, before any v0/v1/multiturn resolution runs, regardless of which tier-config shape `config/eval-tiers.toml` uses. Before this check existed (VD-3792), a package-level `providers` array was silently discarded and replaced by the tier-derived block with no warning — a package could declare, say, its own OpenHands/Docker provider and never actually run against it, with no signal that a substitution had occurred. A package that needs an OpenHands-backed run must migrate `config/eval-tiers.toml` to the v1 shape and give the relevant tier a `provider_kind = "openhands_agent_server"` (or `openhands_sdk`) entry instead of declaring its own `providers` block.
+
+### Package-declared-providers validation (VD-3792)
+
+**Functional spec:** [`docs/functional/vd-3792-provider-declaration-validation/README.md`](functional/vd-3792-provider-declaration-validation/README.md) (AC-1 – AC-5).
+
+**Decision.** The check lives at the very top of `resolveConfigFile()`, immediately after `readYaml()` parses the package config and before `_isV1RawShape`/`_hasMultiTurnTest` branching or the `metadata.eval_tier` presence check. Placing it there — rather than duplicating it inside each of the three resolution branches (v0, v1, multiturn) — means one guard clause covers all three paths (AC-1, AC-2, AC-3) with no risk of a future fourth branch forgetting to include it.
+
+**Check.** `if (parsed.providers) throw new Error(...)`. Truthy-check, not `Array.isArray`, so a malformed non-array `providers` value is caught too — the point is "the package declared this key at all," not "declared it correctly."
+
+**Error message (AC-4).** Includes the normalized package path, names both `providers` and `metadata.eval_tier`, and states the fix:
+
+```
+${normalizedPath} declares its own "providers" array, which the framework silently discards — remove it and rely on metadata.eval_tier (see docs/design.md § Package Contract).
+```
+
+**Non-goal (AC-5).** No change to the success path — a config without `providers` flows through v0/v1/multiturn resolution exactly as before. The new `providers` key this function returns (the tier-derived block) is a distinct value assigned after the check passes; the check never inspects the resolver's own output.
+
+**Key source files**
+
+| File | Purpose |
+| --- | --- |
+| `scripts/framework/resolve-promptfoo-config.js` | `resolveConfigFile()` gains the guard clause. |
+| `scripts/framework/resolve-promptfoo-config.test.js` | New `assert.throws` coverage for AC-1/AC-2/AC-3/AC-4, plus a no-`providers` regression case for AC-5. |
+| `CHANGELOG.md` | New `[1.6.0] — TBD` section; `package.json` bump 1.5.0 → 1.6.0. |
+
 The eval-local `tests/evals/eval-map.json` records package ownership, commands, directories, framework files, and the package catalog. Deterministic tests assert discovered package configs and `eval-map.json` stay aligned.
 
 ## Command Semantics
