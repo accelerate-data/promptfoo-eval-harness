@@ -502,6 +502,108 @@ describe('multi-turn auto-route — v0 tier with vars.turns', () => {
       /declares a multi-turn test.*no\s+\[multiturn\] block/s,
     );
   });
+
+  test('AC-3: resolveConfigFile rejects a package-declared providers field before the multi-turn auto-route runs', () => {
+    const MULTITURN_WITH_PROVIDERS = 'tests/fixtures/multiturn-package-with-providers.json';
+    assert.throws(
+      () => resolveConfigFile(MULTITURN_WITH_PROVIDERS, {
+        rawTierConfig: v0RawTier({
+          multiturn: { provider_kind: 'opencode_sdk', model: 'opencode-go/qwen3.5-plus' },
+        }),
+      }),
+      /declares its own "providers"/,
+    );
+  });
+});
+
+describe('resolveConfigFile — package-declared providers rejected (VD-3792)', () => {
+  beforeEach(() => {
+    _resetRunId();
+  });
+
+  const PACKAGE_WITH_PROVIDERS = 'tests/fixtures/package-with-providers.json';
+
+  test('AC-1: throws for a v0-tier-shaped config before any tier-derived provider block is computed', () => {
+    const rawTierConfig = {
+      runtime: {
+        provider_id: 'file://scripts/framework/opencode-cli-provider.js',
+        opencode_config: 'opencode.json',
+        project_dir: '../..',
+      },
+      tiers: { light: { agent: 'eval_light' } },
+    };
+    assert.throws(
+      () => resolveConfigFile(PACKAGE_WITH_PROVIDERS, { rawTierConfig }),
+      /declares its own "providers"/,
+    );
+  });
+
+  test('AC-1b: throws even with no rawTierConfig override, i.e. before _readRawTierConfig/_isV1RawShape ' +
+    'ever inspects the real on-disk config/eval-tiers.toml — proves the guard precedes the legacy ' +
+    'v0-non-multiturn resolveProviderBlock() branch too, which is the one branch that ignores an ' +
+    'injected rawTierConfig entirely', () => {
+    assert.throws(
+      () => resolveConfigFile(PACKAGE_WITH_PROVIDERS),
+      /declares its own "providers"/,
+    );
+  });
+
+  test('AC-2: throws for a v1-tier-shaped config before any tier-derived provider block is computed', () => {
+    const rawTierConfig = {
+      version: 'v1',
+      tiers: {
+        light: { providers: [{ provider_kind: 'opencode_cli', model: 'x', label: 'x' }] },
+      },
+    };
+    assert.throws(
+      () => resolveConfigFile(PACKAGE_WITH_PROVIDERS, { rawTierConfig }),
+      /declares its own "providers"/,
+    );
+  });
+
+  test('AC-4: thrown message names the package path and mentions both providers and metadata.eval_tier', () => {
+    const rawTierConfig = {
+      version: 'v1',
+      tiers: {
+        light: { providers: [{ provider_kind: 'opencode_cli', model: 'x', label: 'x' }] },
+      },
+    };
+    assert.throws(
+      () => resolveConfigFile(PACKAGE_WITH_PROVIDERS, { rawTierConfig }),
+      (err) => {
+        assert.match(err.message, /tests\/fixtures\/package-with-providers\.json/);
+        assert.match(err.message, /"providers"/);
+        assert.match(err.message, /metadata\.eval_tier/);
+        return true;
+      },
+    );
+  });
+
+  test('AC-5: a config with metadata.eval_tier and no providers field resolves unaffected (v1, multiturn)', () => {
+    // The legacy v0-non-multiturn branch resolves tiers via the real on-disk
+    // config/eval-tiers.toml (resolveProviderBlock does not accept an injected
+    // rawTierConfig), so it is exercised separately, not here — this test
+    // covers the two branches that do honor the injected rawTierConfig seam.
+    const SMOKE_CONFIG = 'examples/harness-smoke/promptfooconfig.json';
+    const MULTITURN_CONFIG = 'tests/fixtures/multiturn-package-config.json';
+
+    const v1Tier = {
+      version: 'v1',
+      tiers: { light: { providers: [{ provider_kind: 'opencode_cli', model: 'x', label: 'x' }] } },
+    };
+    const v0TierWithMultiturn = {
+      runtime: {
+        provider_id: 'file://scripts/framework/opencode-cli-provider.js',
+        opencode_config: 'opencode.json',
+        project_dir: '../..',
+      },
+      tiers: { light: { agent: 'eval_light' } },
+      multiturn: { provider_kind: 'opencode_sdk', model: 'opencode-go/qwen3.5-plus' },
+    };
+
+    assert.doesNotThrow(() => resolveConfigFile(SMOKE_CONFIG, { rawTierConfig: v1Tier }));
+    assert.doesNotThrow(() => resolveConfigFile(MULTITURN_CONFIG, { rawTierConfig: v0TierWithMultiturn }));
+  });
 });
 
 describe('resolveMultiProviderConfig — error cases', () => {
