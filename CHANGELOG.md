@@ -13,6 +13,37 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Versions follo
 
 ---
 
+## [1.6.0] — TBD
+
+### Summary
+
+Closes a silent provider-override bug (VD-3792): a package config that
+declared its own `providers` array had that array discarded and replaced
+by the tier-derived provider block with no warning, so a package could
+believe it was running against a specific provider (e.g. an
+OpenHands/Docker-backed one) and never actually exercise it.
+
+### Fixed
+
+- `resolveConfigFile()` (`scripts/framework/resolve-promptfoo-config.js`)
+  now throws immediately — before any v0/v1/multi-turn resolution runs —
+  when a package config declares its own `providers` field. The error
+  names the offending package path and points at the fix: drop
+  `providers` and rely on `metadata.eval_tier` (migrating
+  `config/eval-tiers.toml` to the v1 shape with a
+  `provider_kind = "openhands_agent_server"` or `openhands_sdk` tier
+  entry, if an OpenHands-backed run is needed).
+
+### Breaking
+
+- A package config that previously declared `providers` alongside
+  `metadata.eval_tier` — and silently ran against the tier-derived
+  provider instead — now fails fast at config-resolution time. Remove
+  the package-level `providers` field to restore the (previously
+  silently-substituted) tier-derived behavior.
+
+---
+
 ## [1.5.0] — TBD
 
 ### Summary
