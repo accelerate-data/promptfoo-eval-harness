@@ -32,6 +32,26 @@ const DEFAULT_EVAL_MODE_PREAMBLE = [
   'Select the first/recommended option at every decision point.',
 ].join(' ');
 
+// Idle/stall watchdog: if no WS stream event arrives for this many ms,
+// conclude the turn with whatever partial output has been collected so far
+// instead of hanging until the outer promptfoo timeout. Mirrors the
+// STREAM_IDLE_TIMEOUT_MS floor rationale in the legacy scripts/openhands-provider.js
+// this provider replaces — a cold Fabric/dbt build on a Spark session can be
+// silent 5-10 min, so the floor must clear that. env-tunable via
+// OPENHANDS_STREAM_IDLE_TIMEOUT_MS — same var name as the legacy provider, so
+// one setting covers both providers during the -oh migration.
+const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 900_000;
+
+// Note: 0 is treated as "unset" here (falls through to env/default), not as
+// "disable the watchdog" — nothing in this codebase needs disable semantics
+// today. If that's ever needed, this precedence chain needs an explicit
+// `options.idleTimeoutMs === 0` check before it, since `0 || fallback` would
+// otherwise silently discard an intentional 0.
+function positiveInteger(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 // LiteLLM has no native opencode-go provider; the upstream Zen subscription is
 // OpenAI-wire-compatible at this base URL, so we remap `opencode-go/<model>`
 // to `openai/<model>` and forward api_key + base_url.
@@ -231,6 +251,10 @@ class OpenhandsAgentServerProvider {
     this.providerId = options.id || 'openhands-agent-server';
     this.httpClient = options.httpClient || defaultHttpClient();
     this.wsClient = options.wsClient || defaultWsClient();
+    this.idleTimeoutMs =
+      positiveInteger(options.idleTimeoutMs) ||
+      positiveInteger(process.env.OPENHANDS_STREAM_IDLE_TIMEOUT_MS) ||
+      DEFAULT_STREAM_IDLE_TIMEOUT_MS;
   }
 
   id() {
@@ -415,12 +439,14 @@ module.exports.__private = {
   DEFAULT_MICROAGENT_REL_PATH,
   DEFAULT_AGENT_SEMANTICS,
   DEFAULT_EVAL_MODE_PREAMBLE,
+  DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   OPENCODE_GO_BASE_URL,
   buildOpenhandsRunMetadata,
   buildLlmPayload,
   deriveLitellmProvider,
   extractWorkspace,
   installMicroagent,
+  positiveInteger,
   resolveAdapter,
   writeProviderRunMetadata,
 };

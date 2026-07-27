@@ -267,6 +267,55 @@ test('extractWorkspace parses both prompt conventions', () => {
 });
 
 // ---------------------------------------------------------------------------
+// VD-3814 — idle/stall watchdog
+// ---------------------------------------------------------------------------
+
+test('idleTimeoutMs defaults to DEFAULT_STREAM_IDLE_TIMEOUT_MS (15 min) when unset', () => {
+  const previous = process.env.OPENHANDS_STREAM_IDLE_TIMEOUT_MS;
+  delete process.env.OPENHANDS_STREAM_IDLE_TIMEOUT_MS;
+  try {
+    const provider = new OpenhandsAgentServerProvider({ config: {} });
+    assert.equal(__private.DEFAULT_STREAM_IDLE_TIMEOUT_MS, 900_000);
+    assert.equal(provider.idleTimeoutMs, __private.DEFAULT_STREAM_IDLE_TIMEOUT_MS);
+  } finally {
+    if (previous === undefined) delete process.env.OPENHANDS_STREAM_IDLE_TIMEOUT_MS;
+    else process.env.OPENHANDS_STREAM_IDLE_TIMEOUT_MS = previous;
+  }
+});
+
+test('OPENHANDS_STREAM_IDLE_TIMEOUT_MS env overrides the default idle timeout', () => {
+  const previous = process.env.OPENHANDS_STREAM_IDLE_TIMEOUT_MS;
+  process.env.OPENHANDS_STREAM_IDLE_TIMEOUT_MS = '5000';
+  try {
+    const provider = new OpenhandsAgentServerProvider({ config: {} });
+    assert.equal(provider.idleTimeoutMs, 5000);
+  } finally {
+    if (previous === undefined) delete process.env.OPENHANDS_STREAM_IDLE_TIMEOUT_MS;
+    else process.env.OPENHANDS_STREAM_IDLE_TIMEOUT_MS = previous;
+  }
+});
+
+test('idleTimeoutMs constructor option wins over OPENHANDS_STREAM_IDLE_TIMEOUT_MS env', () => {
+  const previous = process.env.OPENHANDS_STREAM_IDLE_TIMEOUT_MS;
+  process.env.OPENHANDS_STREAM_IDLE_TIMEOUT_MS = '5000';
+  try {
+    const provider = new OpenhandsAgentServerProvider({ config: {}, idleTimeoutMs: 1234 });
+    assert.equal(provider.idleTimeoutMs, 1234);
+  } finally {
+    if (previous === undefined) delete process.env.OPENHANDS_STREAM_IDLE_TIMEOUT_MS;
+    else process.env.OPENHANDS_STREAM_IDLE_TIMEOUT_MS = previous;
+  }
+});
+
+test('positiveInteger rejects non-positive and non-numeric values', () => {
+  assert.equal(__private.positiveInteger('0'), null);
+  assert.equal(__private.positiveInteger('-5'), null);
+  assert.equal(__private.positiveInteger('not-a-number'), null);
+  assert.equal(__private.positiveInteger(undefined), null);
+  assert.equal(__private.positiveInteger('250'), 250);
+});
+
+// ---------------------------------------------------------------------------
 // Phase 07 — T11/T11b/T12: OPENHANDS_SERVER_URL + model precedence
 // ---------------------------------------------------------------------------
 
