@@ -94,13 +94,13 @@ Package configs must define `metadata.eval_tier` and must not define `providers`
 
 **Error message (AC-4).** Includes the normalized package path, names both `providers` and `metadata.eval_tier`, and states the fix:
 
-```
+```text
 ${normalizedPath} declares its own "providers" array, which the framework silently discards — remove it and rely on metadata.eval_tier (see docs/design.md § Package Contract).
 ```
 
 **Non-goal (AC-5).** No change to the success path — a config without `providers` flows through v0/v1/multiturn resolution exactly as before. The new `providers` key this function returns (the tier-derived block) is a distinct value assigned after the check passes; the check never inspects the resolver's own output.
 
-**Key source files**
+#### Key source files
 
 | File | Purpose |
 | --- | --- |
