@@ -315,6 +315,124 @@ test('positiveInteger rejects non-positive and non-numeric values', () => {
   assert.equal(__private.positiveInteger('250'), 250);
 });
 
+test('idle watchdog concludes the turn with partial output, a trajectory marker, and a closed WS when the stream goes silent', async () => {
+  const suite = makeSuite();
+  suite.writeConfig();
+  let closeCalls = 0;
+  try {
+    const provider = new OpenhandsAgentServerProvider({
+      config: { agent: 'eval_light', opencode_config: suite.relConfig },
+      httpClient: { async post() { return { status: 200, json: { id: 'c1' } }; } },
+      idleTimeoutMs: 30,
+      wsClient: {
+        connect() {
+          return {
+            events: (async function* () {
+              yield {
+                kind: 'MessageEvent',
+                source: 'agent',
+                llm_message: { content: [{ type: 'text', text: 'partial' }] },
+              };
+              // Never yields again within the test's lifetime — the idle
+              // watchdog (30ms) must fire long before this 500ms elapses.
+              // .unref() keeps this dangling timer from blocking process exit
+              // once the test (and the file's other tests) are done.
+              await new Promise((resolve) => setTimeout(resolve, 500).unref());
+            })(),
+            close() {
+              closeCalls += 1;
+            },
+          };
+        },
+      },
+    });
+
+    const start = Date.now();
+    const result = await provider.callApi(`Workspace: ${suite.workspace}\nprompt`);
+    const elapsedMs = Date.now() - start;
+
+    assert.deepEqual(result, { output: 'partial' });
+    assert.ok(elapsedMs < 400, `expected the idle watchdog to fire well before 500ms, took ${elapsedMs}ms`);
+    assert.equal(closeCalls, 1);
+    const traj = JSON.parse(fs.readFileSync(path.join(suite.workspace, '.eval-run', 'trajectory.json'), 'utf8'));
+    const marker = traj.find((e) => e.kind === 'idle_timeout');
+    assert.ok(marker, 'expected an idle_timeout trajectory entry');
+    assert.equal(marker.idle_ms, 30);
+  } finally {
+    suite.cleanup();
+  }
+});
+
+test('idle watchdog resets on every stream event so a slow-but-steady stream is not cut short', async () => {
+  const suite = makeSuite();
+  suite.writeConfig();
+  try {
+    const provider = new OpenhandsAgentServerProvider({
+      config: { agent: 'eval_light', opencode_config: suite.relConfig },
+      httpClient: { async post() { return { status: 200, json: { id: 'c1' } }; } },
+      idleTimeoutMs: 100,
+      wsClient: {
+        connect() {
+          return {
+            events: (async function* () {
+              yield {
+                kind: 'MessageEvent',
+                source: 'agent',
+                llm_message: { content: [{ type: 'text', text: 'a' }] },
+              };
+              await new Promise((resolve) => setTimeout(resolve, 60).unref());
+              yield {
+                kind: 'MessageEvent',
+                source: 'agent',
+                llm_message: { content: [{ type: 'text', text: 'b' }] },
+              };
+              await new Promise((resolve) => setTimeout(resolve, 60).unref());
+              yield { kind: 'ConversationStateUpdateEvent', key: 'execution_status', value: 'finished' };
+            })(),
+            close() {},
+          };
+        },
+      },
+    });
+
+    const result = await provider.callApi(`Workspace: ${suite.workspace}\nprompt`);
+    assert.deepEqual(result, { output: 'ab' });
+  } finally {
+    suite.cleanup();
+  }
+});
+
+test('clean terminal event still triggers iterator.return() (for-await-of parity)', async () => {
+  const suite = makeSuite();
+  suite.writeConfig();
+  let returnCalled = false;
+  try {
+    async function* generatorWithCleanup() {
+      try {
+        yield { kind: 'MessageEvent', source: 'agent', llm_message: { content: [{ type: 'text', text: 'done' }] } };
+        yield { kind: 'ConversationStateUpdateEvent', key: 'execution_status', value: 'finished' };
+      } finally {
+        // A `for await...of` loop's automatic `iterator.return()` call is what
+        // runs this `finally` on early exit. This test exists specifically to
+        // confirm the manual Promise.race loop still triggers it.
+        returnCalled = true;
+      }
+    }
+    const provider = new OpenhandsAgentServerProvider({
+      config: { agent: 'eval_light', opencode_config: suite.relConfig },
+      httpClient: { async post() { return { status: 200, json: { id: 'c1' } }; } },
+      wsClient: { connect: () => generatorWithCleanup() },
+    });
+
+    const result = await provider.callApi(`Workspace: ${suite.workspace}\nprompt`);
+
+    assert.deepEqual(result, { output: 'done' });
+    assert.equal(returnCalled, true, 'expected iterator.return() to run the generator finally block');
+  } finally {
+    suite.cleanup();
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Phase 07 — T11/T11b/T12: OPENHANDS_SERVER_URL + model precedence
 // ---------------------------------------------------------------------------
