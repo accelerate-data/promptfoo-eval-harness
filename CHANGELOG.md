@@ -13,6 +13,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Versions follo
 
 ---
 
+## [1.7.0] — TBD
+
+### Summary
+
+Adds an idle/stall watchdog to `openhands-agent-server-provider.js`,
+matching the behavior the legacy `openhands-provider.js` already had
+(VD-3814).
+
+### Added
+
+- `OPENHANDS_STREAM_IDLE_TIMEOUT_MS` (default `900000` / 15 min) —
+  if the OpenHands agent-server WebSocket event stream goes silent for
+  longer than this, the provider concludes the turn with whatever
+  partial output it has collected instead of hanging until the outer
+  Promptfoo timeout.
+
+---
+
 ## [1.6.0] — TBD
 
 ### Summary
