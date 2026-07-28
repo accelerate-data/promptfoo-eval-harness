@@ -32,6 +32,26 @@ const DEFAULT_EVAL_MODE_PREAMBLE = [
   'Select the first/recommended option at every decision point.',
 ].join(' ');
 
+// Idle/stall watchdog: if no WS stream event arrives for this many ms,
+// conclude the turn with whatever partial output has been collected so far
+// instead of hanging until the outer promptfoo timeout. Mirrors the
+// STREAM_IDLE_TIMEOUT_MS floor rationale in the legacy scripts/openhands-provider.js
+// this provider replaces — a cold Fabric/dbt build on a Spark session can be
+// silent 5-10 min, so the floor must clear that. env-tunable via
+// OPENHANDS_STREAM_IDLE_TIMEOUT_MS — same var name as the legacy provider, so
+// one setting covers both providers during the -oh migration.
+const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 900_000;
+
+// Note: 0 is treated as "unset" here (falls through to env/default), not as
+// "disable the watchdog" — nothing in this codebase needs disable semantics
+// today. If that's ever needed, this precedence chain needs an explicit
+// `options.idleTimeoutMs === 0` check before it, since `0 || fallback` would
+// otherwise silently discard an intentional 0.
+function positiveInteger(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 // LiteLLM has no native opencode-go provider; the upstream Zen subscription is
 // OpenAI-wire-compatible at this base URL, so we remap `opencode-go/<model>`
 // to `openai/<model>` and forward api_key + base_url.
@@ -231,6 +251,10 @@ class OpenhandsAgentServerProvider {
     this.providerId = options.id || 'openhands-agent-server';
     this.httpClient = options.httpClient || defaultHttpClient();
     this.wsClient = options.wsClient || defaultWsClient();
+    this.idleTimeoutMs =
+      positiveInteger(options.idleTimeoutMs) ||
+      positiveInteger(process.env.OPENHANDS_STREAM_IDLE_TIMEOUT_MS) ||
+      DEFAULT_STREAM_IDLE_TIMEOUT_MS;
   }
 
   id() {
@@ -355,6 +379,7 @@ class OpenhandsAgentServerProvider {
     let terminalError = null;
 
     const runDir = path.join(workspace, '.eval-run');
+    const iterator = events[Symbol.asyncIterator]();
     try {
       // LOCKSTEP NOTE: real OpenHands 1.23.1 (pair-bumped from 1.21.1 on
       // 2026-05-26 — event kinds preserved across the bump) event kinds:
@@ -364,7 +389,31 @@ class OpenhandsAgentServerProvider {
       // OR ActionEvent with action.kind === 'FinishAction'. Terminal:
       // ConversationErrorEvent OR ConversationStateUpdateEvent with
       // key=execution_status and value in {error, finished, paused}.
-      for await (const event of events) {
+      //
+      // Idle/stall watchdog (VD-3814): manual iteration instead of
+      // `for await` — see DEFAULT_STREAM_IDLE_TIMEOUT_MS above for why, and
+      // the `iterator.return?.()` call in the `finally` block below for why
+      // this loop must replicate `for await...of`'s automatic cleanup call.
+      const IDLE_SIGNAL = Symbol('idle-timeout');
+      for (;;) {
+        const nextPromise = iterator.next();
+        let idleTimer;
+        const idlePromise = new Promise((resolve) => {
+          idleTimer = setTimeout(() => resolve(IDLE_SIGNAL), this.idleTimeoutMs);
+        });
+        const raced = await Promise.race([nextPromise, idlePromise]);
+        clearTimeout(idleTimer);
+
+        if (raced === IDLE_SIGNAL) {
+          process.stderr.write(
+            `[openhands-agent-server-provider] no stream events for ${this.idleTimeoutMs}ms; concluding turn (idle)\n`,
+          );
+          trajectory.push({ kind: 'idle_timeout', idle_ms: this.idleTimeoutMs });
+          break;
+        }
+
+        const { value: event, done } = raced;
+        if (done) break;
         trajectory.push(event);
         if (event.kind === 'MessageEvent' && event.source === 'agent') {
           const content = event.llm_message?.content;
@@ -395,8 +444,20 @@ class OpenhandsAgentServerProvider {
     } finally {
       // Close the WS unconditionally — without this the live socket can keep
       // the Promptfoo Node process alive past the eval's result and stall
-      // until the outer timeout fires.
+      // until the outer timeout fires. On the idle-timeout path above, this
+      // is also what lets the abandoned `iterator.next()` promise eventually
+      // settle instead of leaking.
       closeWs();
+      // `for await...of` calls `iterator.return()` automatically on early
+      // exit; this manual loop must do the same so a wsClient generator with
+      // its own try/finally cleanup still gets it. NOT awaited: on the
+      // idle-timeout path there's already an outstanding `next()` call in
+      // flight, and `.return()` issued while a `.next()` is pending only
+      // settles after that `.next()` does — awaiting it here would block
+      // turn conclusion on the same silence this watchdog exists to route
+      // around. Errors are swallowed; a generator's own cleanup failing must
+      // not fail the eval turn.
+      iterator.return?.().catch(() => {});
       fs.mkdirSync(runDir, { recursive: true });
       fs.writeFileSync(
         path.join(runDir, 'trajectory.json'),
@@ -415,12 +476,14 @@ module.exports.__private = {
   DEFAULT_MICROAGENT_REL_PATH,
   DEFAULT_AGENT_SEMANTICS,
   DEFAULT_EVAL_MODE_PREAMBLE,
+  DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   OPENCODE_GO_BASE_URL,
   buildOpenhandsRunMetadata,
   buildLlmPayload,
   deriveLitellmProvider,
   extractWorkspace,
   installMicroagent,
+  positiveInteger,
   resolveAdapter,
   writeProviderRunMetadata,
 };

@@ -310,7 +310,7 @@ passes through verbatim, and only `OPENHANDS_API_KEY` is consulted. The legacy m
 
    You will see `[ad-evals] agent-server ready on http://127.0.0.1:<port> (<ms>ms)` in the log, then a normal Promptfoo eval table. When the run finishes the daemon is stopped (SIGTERM → 5 s → SIGKILL on the process group); no orphan processes.
 
-Model precedence (highest wins): `OPENHANDS_MODEL_OVERRIDE` env > the `model` field on the provider in `eval-tiers.toml` > `agent.<tier>.model` in `openhands.json`.
+Model precedence (highest wins): `OPENHANDS_MODEL_OVERRIDE` env > the `model` field on the provider in `eval-tiers.toml` > `agent.<tier>.model` in `openhands.json`. If the stream produces no event for `OPENHANDS_STREAM_IDLE_TIMEOUT_MS` ms (default `900000`), the provider concludes the turn with its partial output rather than hanging until the outer promptfoo timeout — set this env var to raise the floor for a lane with legitimately longer silent gaps.
 
 For manual debugging without the CLI driver, start an `openhands-agent-server` instance on `127.0.0.1:<your-port>` by hand, then `export OPENHANDS_SERVER_URL=http://127.0.0.1:<your-port>` before invoking `promptfoo` directly. Non-empty values win over `openhands.json`; an empty string falls back to the JSON. The daemon binds `127.0.0.1` only — do NOT point this env var at a remote URL.
 
