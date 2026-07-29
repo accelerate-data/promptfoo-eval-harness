@@ -395,16 +395,34 @@ function _buildBridgeProviderEntry(tierName, providerEntry, providerIndex, scena
   }
 
   const { provider_kind, model, label, agent_config, ...rest } = providerEntry;
-  // Build provider_options from remaining fields (not provider_kind / model / label)
-  const provider_options = Object.keys(rest).length > 0 ? rest : undefined;
 
+  // Remaining fields (agent, opencode_config, project_dir, format, log_level,
+  // extra, …) land at config TOP LEVEL, not nested under a provider_options
+  // bag — every bridge-routed provider module (opencode-cli-provider.js,
+  // opencode_sdk, codex_sdk, openhands_sdk's agent_factory.py) reads its
+  // per-kind fields directly off the config object it is constructed/init'd
+  // with, and none of them ever unwrap a `provider_options` key. Nesting here
+  // silently dropped every consumer field the provider needed (VD-3912),
+  // including OpenHands gateway mode's `extra.base_url`.
+  //
+  // `...rest` is spread FIRST and the resolver-owned keys (provider_kind,
+  // model, run_id, case_id, provider_label) are set AFTER, so a provider
+  // entry cannot accidentally declare a field with one of those names and
+  // clobber the resolver's own run/case identity — the ordering is a
+  // structural guarantee, not a documentation-only convention.
+  //
+  // Redaction (secret_redactor.js `redact()`) walks any object shape
+  // recursively regardless of key names, so flattening vs. nesting has no
+  // security/redaction implication — the old comment's "bridge security
+  // model" reference was about the *subprocess env allowlist*
+  // (_buildSpawnSpec's kindPins.env_allowlist), an unrelated mechanism.
   const config = {
+    ...rest,
     provider_kind,
     model: model || null,
     run_id: runId,
     case_id,
     ...(label ? { provider_label: label } : {}),
-    ...(provider_options ? { provider_options } : {}),
   };
 
   return {

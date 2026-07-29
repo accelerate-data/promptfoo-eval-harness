@@ -757,3 +757,49 @@ describe('resolveMultiProviderConfig — error cases', () => {
     );
   });
 });
+
+describe('VD-3912 integration — resolver output feeds a REAL (non-stubbed) OpenCodeCliProvider', () => {
+  beforeEach(() => {
+    _resetRunId();
+    delete process.env.OPENCODE_MOCK_MODE; // guard: mock mode bypasses the
+    // exact missingField validation this bug lives in (opencode-cli-provider.js
+    // turn()/callApi() check OPENCODE_MOCK_MODE before validating config), so
+    // a test run under mock mode would "pass" whether or not the fix is
+    // present — a false positive. Explicitly unset it here.
+  });
+
+  test('AC-1/AC-2: resolver output satisfies the real provider\'s missingField check without a manual patch', async () => {
+    const OpenCodeCliProvider = require('./opencode-cli-provider.js');
+    const tierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            {
+              provider_kind: 'opencode_cli',
+              model: 'anthropic/claude-haiku-4-5',
+              label: 'oc',
+              agent: 'eval_light',
+              opencode_config: 'opencode.json',
+              project_dir: '../..',
+              format: 'json',
+              log_level: 'info',
+            },
+          ],
+        },
+      },
+    };
+    const result = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light', { runId: 'integration-001' });
+    const { config } = result.providers[0];
+
+    // Real provider, real config — only the runner is faked, so this never
+    // spawns the actual opencode binary. This is the same construction
+    // _node_bridge.js's opencode_cli dispatch performs in production.
+    const fakeRunner = async () => 'stub output';
+    const provider = new OpenCodeCliProvider({ config, runner: fakeRunner });
+    const response = await provider.callApi('hello', { vars: {} });
+
+    assert.ok(!response.error, `expected no error, got: ${response.error}`);
+    assert.strictEqual(response.output, 'stub output');
+  });
+});
