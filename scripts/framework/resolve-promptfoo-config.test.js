@@ -121,6 +121,143 @@ describe('resolveMultiProviderConfig — v1 multi-provider', () => {
     }
   });
 
+  test('AC-3: opencode_cli v1 entry exposes agent/opencode_config/project_dir at config TOP LEVEL, not nested under provider_options', () => {
+    const tierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            {
+              provider_kind: 'opencode_cli',
+              model: 'anthropic/claude-haiku-4-5',
+              label: 'oc',
+              agent: 'eval_light',
+              opencode_config: 'opencode.json',
+              project_dir: '../..',
+              format: 'json',
+              log_level: 'info',
+            },
+          ],
+        },
+      },
+    };
+    const result = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light', { runId: 'ac3-flatten' });
+    const entry = result.providers[0];
+
+    // The exact bug from VD-3912: opencode-cli-provider.js reads these fields
+    // off the top level of config, never off a nested provider_options bag.
+    assert.strictEqual(entry.config.agent, 'eval_light');
+    assert.strictEqual(entry.config.opencode_config, 'opencode.json');
+    assert.strictEqual(entry.config.project_dir, '../..');
+    assert.strictEqual(entry.config.format, 'json');
+    assert.strictEqual(entry.config.log_level, 'info');
+    assert.ok(!('provider_options' in entry.config), 'fields must not be nested under provider_options');
+  });
+
+  test('AC-3: opencode_sdk v1 entry exposes extra.opencode_agent at config.extra top level', () => {
+    const tierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            {
+              provider_kind: 'opencode_sdk',
+              model: 'opencode-go/qwen3.5-plus',
+              label: 'oc-sdk',
+              extra: { opencode_agent: 'build' },
+            },
+          ],
+        },
+      },
+    };
+    const result = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light', { runId: 'ac3-sdk-flatten' });
+    const entry = result.providers[0];
+    assert.deepStrictEqual(entry.config.extra, { opencode_agent: 'build' });
+    assert.ok(!('provider_options' in entry.config), 'extra must not be nested under provider_options');
+  });
+
+  test('AC-3: codex_sdk v1 entry exposes extra.sandbox_mode/reasoning_effort at config.extra top level', () => {
+    const tierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            {
+              provider_kind: 'codex_sdk',
+              model: 'gpt-5-codex',
+              label: 'codex',
+              extra: { sandbox_mode: 'workspace-write', reasoning_effort: 'high' },
+            },
+          ],
+        },
+      },
+    };
+    const result = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light', { runId: 'ac3-codex-flatten' });
+    const entry = result.providers[0];
+    assert.deepStrictEqual(entry.config.extra, { sandbox_mode: 'workspace-write', reasoning_effort: 'high' });
+    assert.ok(!('provider_options' in entry.config), 'extra must not be nested under provider_options');
+  });
+
+  test('AC-3: openhands_sdk v1 entry exposes extra.base_url at config.extra top level (gateway mode)', () => {
+    const tierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            {
+              provider_kind: 'openhands_sdk',
+              model: 'gpt-4o',
+              label: 'oh-gateway',
+              extra: { base_url: 'https://gateway.internal/v1' },
+            },
+          ],
+        },
+      },
+    };
+    const result = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light', { runId: 'ac3-oh-flatten' });
+    const entry = result.providers[0];
+    // This is the exact field OpenHands gateway mode reads (agent_factory.py
+    // cfg.extra.get("base_url")) to decide whether to bypass legacy
+    // prefix-routed API keys. Nested under provider_options, gateway mode
+    // silently never activates.
+    assert.deepStrictEqual(entry.config.extra, { base_url: 'https://gateway.internal/v1' });
+    assert.ok(!('provider_options' in entry.config), 'extra must not be nested under provider_options');
+  });
+
+  test('AC-3: a provider-declared field cannot clobber resolver-owned run_id/case_id/provider_label', () => {
+    const tierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            {
+              provider_kind: 'opencode_cli',
+              model: 'anthropic/claude-haiku-4-5',
+              label: 'oc',
+              agent: 'eval_light',
+              opencode_config: 'opencode.json',
+              project_dir: '../..',
+              format: 'json',
+              log_level: 'info',
+              // Adversarial: a consumer TOML entry that happens to declare
+              // these names should never be able to overwrite the resolver's
+              // own run/case identity — nothing in parseTierConfig forbids
+              // a provider entry from declaring them.
+              run_id: 'attacker-controlled-run-id',
+              case_id: 'attacker-controlled-case-id',
+              provider_label: 'attacker-controlled-label',
+            },
+          ],
+        },
+      },
+    };
+    const result = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light', { runId: 'real-run-id' });
+    const entry = result.providers[0];
+    assert.strictEqual(entry.config.run_id, 'real-run-id', 'resolver-owned run_id must win');
+    assert.notStrictEqual(entry.config.case_id, 'attacker-controlled-case-id', 'resolver-owned case_id must win');
+    assert.strictEqual(entry.config.provider_label, 'oc', 'resolver-owned provider_label (from `label`) must win');
+  });
+
   test('run_id is stable across all entries in one call', () => {
     const tierConfig = {
       version: 'v1',
