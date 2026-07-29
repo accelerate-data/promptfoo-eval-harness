@@ -377,45 +377,35 @@ function _buildBridgeProviderEntry(tierName, providerEntry, providerIndex, scena
   if (providerEntry.provider_kind === 'openhands_agent_server') {
     // Wrapper-style provider: bypasses _node_bridge.js entirely. All consumer
     // fields (agent, openhands_config, agent_config, …) arrive at config top
-    // level — there is no provider_options bag because the bridge security
-    // model (env allowlist + redaction) does not apply when we never enter
-    // the bridge.
+    // level — same field-placement shape as the standard bridge branch below
+    // (see that branch's comment for the full collision-safety rationale).
     const { provider_kind, model, label, ...rest } = providerEntry;
+    const resolvedLabel = label || `${tierName}/openhands_agent_server/${model || rest.agent || 'unknown'}`;
     return {
       id: AGENT_SERVER_FILE_URL,
-      label: label || `${tierName}/openhands_agent_server/${model || rest.agent || 'unknown'}`,
+      label: resolvedLabel,
       config: {
+        ...rest,
         provider_kind,
         model: model || null,
         run_id: runId,
         case_id,
-        ...rest,
       },
     };
   }
 
   const { provider_kind, model, label, agent_config, ...rest } = providerEntry;
 
-  // Remaining fields (agent, opencode_config, project_dir, format, log_level,
-  // extra, …) land at config TOP LEVEL, not nested under a provider_options
-  // bag — every bridge-routed provider module (opencode-cli-provider.js,
-  // opencode_sdk, codex_sdk, openhands_sdk's agent_factory.py) reads its
-  // per-kind fields directly off the config object it is constructed/init'd
-  // with, and none of them ever unwrap a `provider_options` key. Nesting here
-  // silently dropped every consumer field the provider needed (VD-3912),
-  // including OpenHands gateway mode's `extra.base_url`.
-  //
-  // `...rest` is spread FIRST and the resolver-owned keys (provider_kind,
-  // model, run_id, case_id, provider_label) are set AFTER, so a provider
-  // entry cannot accidentally declare a field with one of those names and
-  // clobber the resolver's own run/case identity — the ordering is a
-  // structural guarantee, not a documentation-only convention.
-  //
-  // Redaction (secret_redactor.js `redact()`) walks any object shape
-  // recursively regardless of key names, so flattening vs. nesting has no
-  // security/redaction implication — the old comment's "bridge security
-  // model" reference was about the *subprocess env allowlist*
-  // (_buildSpawnSpec's kindPins.env_allowlist), an unrelated mechanism.
+  // Fields (agent, opencode_config, project_dir, format, log_level, extra, …)
+  // land at config TOP LEVEL, not under a provider_options bag — every
+  // bridge-routed provider module reads its per-kind fields directly off the
+  // config object (VD-3912). `...rest` is spread BEFORE the resolver-owned
+  // keys so a provider entry cannot clobber the resolver's own run/case
+  // identity — structural, not documentation-only. `provider_kind`, `model`,
+  // `run_id`, `case_id` are always resolver-owned; `provider_label` is
+  // resolver-owned only when the entry declares a `label` (see the
+  // conditional spread below). Redaction is shape-agnostic (walks any object
+  // recursively), so this has no security/redaction implication.
   const config = {
     ...rest,
     provider_kind,

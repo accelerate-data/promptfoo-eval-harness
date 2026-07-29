@@ -1,6 +1,6 @@
 'use strict';
 
-const { test, describe, beforeEach } = require('node:test');
+const { test, describe, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 
@@ -377,6 +377,34 @@ describe('resolveMultiProviderConfig — openhands_agent_server routing', () => 
     assert.strictEqual(entry.config.run_id, 'as-001');
     assert.ok(entry.config.case_id && typeof entry.config.case_id === 'string');
     assert.ok(!('provider_options' in entry.config), 'agent-server kind has no provider_options bag');
+  });
+
+  test('AC-3: a provider-declared field cannot clobber resolver-owned run_id/case_id in the openhands_agent_server branch', () => {
+    const tierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            {
+              provider_kind: 'openhands_agent_server',
+              agent: 'eval_light',
+              openhands_config: 'openhands.json',
+              model: 'openai/gpt-4o-mini',
+              // Adversarial: a consumer TOML entry that happens to declare
+              // these names should never be able to overwrite the resolver's
+              // own run/case identity — nothing in parseTierConfig forbids
+              // a provider entry from declaring them.
+              run_id: 'attacker-controlled-run-id',
+              case_id: 'attacker-controlled-case-id',
+            },
+          ],
+        },
+      },
+    };
+    const result = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light', { runId: 'real-run-id' });
+    const entry = result.providers[0];
+    assert.strictEqual(entry.config.run_id, 'real-run-id', 'resolver-owned run_id must win');
+    assert.notStrictEqual(entry.config.case_id, 'attacker-controlled-case-id', 'resolver-owned case_id must win');
   });
 
   test('non-agent-server kinds still emit BRIDGE_FILE_URL', () => {
@@ -759,13 +787,27 @@ describe('resolveMultiProviderConfig — error cases', () => {
 });
 
 describe('VD-3912 integration — resolver output feeds a REAL (non-stubbed) OpenCodeCliProvider', () => {
+  // Guard: mock mode bypasses the exact missingField validation this bug
+  // lives in (opencode-cli-provider.js's turn()/callApi() check
+  // OPENCODE_MOCK_MODE before validating config), so a test run under mock
+  // mode would "pass" whether or not the fix is present — a false positive.
+  // Explicitly unset it for this describe block, and restore whatever value
+  // was present beforehand so this file doesn't leak global env state into
+  // whatever runs after it in the same process.
+  let _savedOpencodeMockMode;
+
   beforeEach(() => {
     _resetRunId();
-    delete process.env.OPENCODE_MOCK_MODE; // guard: mock mode bypasses the
-    // exact missingField validation this bug lives in (opencode-cli-provider.js
-    // turn()/callApi() check OPENCODE_MOCK_MODE before validating config), so
-    // a test run under mock mode would "pass" whether or not the fix is
-    // present — a false positive. Explicitly unset it here.
+    _savedOpencodeMockMode = process.env.OPENCODE_MOCK_MODE;
+    delete process.env.OPENCODE_MOCK_MODE;
+  });
+
+  afterEach(() => {
+    if (_savedOpencodeMockMode === undefined) {
+      delete process.env.OPENCODE_MOCK_MODE;
+    } else {
+      process.env.OPENCODE_MOCK_MODE = _savedOpencodeMockMode;
+    }
   });
 
   test('AC-1/AC-2: resolver output satisfies the real provider\'s missingField check without a manual patch', async () => {
