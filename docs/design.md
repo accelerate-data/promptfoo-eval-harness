@@ -110,6 +110,56 @@ ${normalizedPath} declares its own "providers" array, which the framework silent
 
 The eval-local `tests/evals/eval-map.json` records package ownership, commands, directories, framework files, and the package catalog. Deterministic tests assert discovered package configs and `eval-map.json` stay aligned.
 
+### Bridge-provider `[runtime]` shared-defaults merge (VD-3913)
+
+**Functional spec:** [`docs/functional/vd-3913-bridge-provider-runtime-defaults/README.md`](functional/vd-3913-bridge-provider-runtime-defaults/README.md) (AC-1 – AC-6).
+
+**Decision (AC-1, AC-2, AC-3).** `resolveMultiProviderConfig()` already normalizes the raw tier
+config via `parseTierConfig()`, whose return value carries a passthrough `runtime` object (raw
+snake_case keys, e.g. `opencode_config`, `project_dir`, `format`, `log_level`) whenever the source
+config declares a `[runtime]` table — for both the v1-native and v0-normalized shapes. That
+`runtime` object is threaded one level further, into `_buildBridgeProviderEntry(tierName,
+providerEntry, providerIndex, scenarioIndex, runId, runtimeDefaults)`, which spreads it into the
+resolved `config` object **before** `...rest` (the provider entry's own declared fields):
+
+```js
+const config = {
+  ...runtimeDefaults, // [runtime] shared defaults — lowest precedence
+  ...rest,            // provider entry's own fields — win on collision
+  provider_kind,       // resolver-owned — always wins
+  model: model || null,
+  run_id: runId,
+  case_id,
+  ...(label ? { provider_label: label } : {}),
+};
+```
+
+Spread order (not a conditional per-field merge) gives entry-first-fallback for free: any key the
+provider entry itself declares appears twice in the object literal and the later spread — the
+entry's own `...rest` — wins, satisfying AC-2 with no extra branching. When `[runtime]` is absent,
+`runtimeDefaults` is `{}` and the object collapses to the pre-VD-3913 shape unchanged (AC-3).
+
+**Decision (AC-4).** `runtimeDefaults` is derived from the raw `runtime` object with `provider_id`
+stripped before it reaches `_buildBridgeProviderEntry` — `provider_id` selects the legacy v0 CLI
+provider module (`resolveProviderId`'s own concern) and is never a per-provider bridge config field,
+so it must not leak into a v1 bridge entry's `config` regardless of what `[runtime]` declares.
+
+**Decision (AC-5).** The `openhands_agent_server` branch of `_buildBridgeProviderEntry` (the
+wrapper-style provider that bypasses `_node_bridge.js`) receives the same `runtimeDefaults` spread
+at the same position (`{ ...runtimeDefaults, ...rest, provider_kind, ... }`) — one shared code path
+for both branches, not a duplicated merge.
+
+**Non-goal (unchanged from VD-3912).** Field placement stays at config top level; this fix only
+adds a fallback layer beneath the entry's own fields, it does not change where fields land.
+
+#### Key source files
+
+| File | Purpose |
+| --- | --- |
+| `scripts/framework/resolve-promptfoo-config.js` | `_buildBridgeProviderEntry` gains a `runtimeDefaults` parameter merged into both branches; `resolveMultiProviderConfig` passes `normalized.runtime` (minus `provider_id`) through. |
+| `scripts/framework/resolve-promptfoo-config.test.js` | New coverage for AC-1 (merge), AC-2 (entry override wins), AC-3 (no-`[runtime]` no-op), AC-4 (`provider_id` exclusion), AC-5 (`openhands_agent_server` branch parity), AC-6 (end-to-end resolve of a package like `skill-validating-against-baseline-contract`'s shape). |
+| `CHANGELOG.md` | New patch/minor release entry; `package.json` version bump. |
+
 ## Command Semantics
 
 | Command | Meaning |
