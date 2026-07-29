@@ -9,7 +9,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Versions follo
 
 ## [Unreleased]
 
-<!-- Add entries for unreleased changes here. -->
+### Fixed
+
+- `resolveConfigFile()` / `_buildBridgeProviderEntry()` (`scripts/framework/resolve-promptfoo-config.js`)
+  no longer nests a v1 tier-config provider entry's per-provider fields
+  (`agent`, `opencode_config`, `extra`, `openhands_config`, …) under a
+  `config.provider_options` bag. They now land at the top level of the
+  emitted provider config, matching what every bridge-routed provider
+  module (`opencode-cli-provider.js`, `opencode_sdk`, `codex_sdk`,
+  `openhands_sdk`'s `agent_factory.py`) already reads directly off its
+  config object. Previously, nesting under `provider_options` silently
+  dropped every consumer field a v1-configured provider needed —
+  including OpenHands gateway mode's `extra.base_url`, which could never
+  activate for a v1-configured `openhands_sdk` tier (VD-3912).
 
 ---
 

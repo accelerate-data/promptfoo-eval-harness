@@ -377,34 +377,42 @@ function _buildBridgeProviderEntry(tierName, providerEntry, providerIndex, scena
   if (providerEntry.provider_kind === 'openhands_agent_server') {
     // Wrapper-style provider: bypasses _node_bridge.js entirely. All consumer
     // fields (agent, openhands_config, agent_config, …) arrive at config top
-    // level — there is no provider_options bag because the bridge security
-    // model (env allowlist + redaction) does not apply when we never enter
-    // the bridge.
+    // level — same field-placement shape as the standard bridge branch below
+    // (see that branch's comment for the full collision-safety rationale).
     const { provider_kind, model, label, ...rest } = providerEntry;
+    const resolvedLabel = label || `${tierName}/openhands_agent_server/${model || rest.agent || 'unknown'}`;
     return {
       id: AGENT_SERVER_FILE_URL,
-      label: label || `${tierName}/openhands_agent_server/${model || rest.agent || 'unknown'}`,
+      label: resolvedLabel,
       config: {
+        ...rest,
         provider_kind,
         model: model || null,
         run_id: runId,
         case_id,
-        ...rest,
       },
     };
   }
 
   const { provider_kind, model, label, agent_config, ...rest } = providerEntry;
-  // Build provider_options from remaining fields (not provider_kind / model / label)
-  const provider_options = Object.keys(rest).length > 0 ? rest : undefined;
 
+  // Fields (agent, opencode_config, project_dir, format, log_level, extra, …)
+  // land at config TOP LEVEL, not under a provider_options bag — every
+  // bridge-routed provider module reads its per-kind fields directly off the
+  // config object (VD-3912). `...rest` is spread BEFORE the resolver-owned
+  // keys so a provider entry cannot clobber the resolver's own run/case
+  // identity — structural, not documentation-only. `provider_kind`, `model`,
+  // `run_id`, `case_id` are always resolver-owned; `provider_label` is
+  // resolver-owned only when the entry declares a `label` (see the
+  // conditional spread below). Redaction is shape-agnostic (walks any object
+  // recursively), so this has no security/redaction implication.
   const config = {
+    ...rest,
     provider_kind,
     model: model || null,
     run_id: runId,
     case_id,
     ...(label ? { provider_label: label } : {}),
-    ...(provider_options ? { provider_options } : {}),
   };
 
   return {

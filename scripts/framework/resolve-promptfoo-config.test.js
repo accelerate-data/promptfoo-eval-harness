@@ -1,6 +1,6 @@
 'use strict';
 
-const { test, describe, beforeEach } = require('node:test');
+const { test, describe, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 
@@ -119,6 +119,143 @@ describe('resolveMultiProviderConfig — v1 multi-provider', () => {
     for (const entry of result.providers) {
       assert.ok(!entry.config.vars, 'vars must not be inside config');
     }
+  });
+
+  test('AC-3: opencode_cli v1 entry exposes agent/opencode_config/project_dir at config TOP LEVEL, not nested under provider_options', () => {
+    const tierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            {
+              provider_kind: 'opencode_cli',
+              model: 'anthropic/claude-haiku-4-5',
+              label: 'oc',
+              agent: 'eval_light',
+              opencode_config: 'opencode.json',
+              project_dir: '../..',
+              format: 'json',
+              log_level: 'info',
+            },
+          ],
+        },
+      },
+    };
+    const result = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light', { runId: 'ac3-flatten' });
+    const entry = result.providers[0];
+
+    // The exact bug from VD-3912: opencode-cli-provider.js reads these fields
+    // off the top level of config, never off a nested provider_options bag.
+    assert.strictEqual(entry.config.agent, 'eval_light');
+    assert.strictEqual(entry.config.opencode_config, 'opencode.json');
+    assert.strictEqual(entry.config.project_dir, '../..');
+    assert.strictEqual(entry.config.format, 'json');
+    assert.strictEqual(entry.config.log_level, 'info');
+    assert.ok(!('provider_options' in entry.config), 'fields must not be nested under provider_options');
+  });
+
+  test('AC-3: opencode_sdk v1 entry exposes extra.opencode_agent at config.extra top level', () => {
+    const tierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            {
+              provider_kind: 'opencode_sdk',
+              model: 'opencode-go/qwen3.5-plus',
+              label: 'oc-sdk',
+              extra: { opencode_agent: 'build' },
+            },
+          ],
+        },
+      },
+    };
+    const result = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light', { runId: 'ac3-sdk-flatten' });
+    const entry = result.providers[0];
+    assert.deepStrictEqual(entry.config.extra, { opencode_agent: 'build' });
+    assert.ok(!('provider_options' in entry.config), 'extra must not be nested under provider_options');
+  });
+
+  test('AC-3: codex_sdk v1 entry exposes extra.sandbox_mode/reasoning_effort at config.extra top level', () => {
+    const tierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            {
+              provider_kind: 'codex_sdk',
+              model: 'gpt-5-codex',
+              label: 'codex',
+              extra: { sandbox_mode: 'workspace-write', reasoning_effort: 'high' },
+            },
+          ],
+        },
+      },
+    };
+    const result = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light', { runId: 'ac3-codex-flatten' });
+    const entry = result.providers[0];
+    assert.deepStrictEqual(entry.config.extra, { sandbox_mode: 'workspace-write', reasoning_effort: 'high' });
+    assert.ok(!('provider_options' in entry.config), 'extra must not be nested under provider_options');
+  });
+
+  test('AC-3: openhands_sdk v1 entry exposes extra.base_url at config.extra top level (gateway mode)', () => {
+    const tierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            {
+              provider_kind: 'openhands_sdk',
+              model: 'gpt-4o',
+              label: 'oh-gateway',
+              extra: { base_url: 'https://gateway.internal/v1' },
+            },
+          ],
+        },
+      },
+    };
+    const result = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light', { runId: 'ac3-oh-flatten' });
+    const entry = result.providers[0];
+    // This is the exact field OpenHands gateway mode reads (agent_factory.py
+    // cfg.extra.get("base_url")) to decide whether to bypass legacy
+    // prefix-routed API keys. Nested under provider_options, gateway mode
+    // silently never activates.
+    assert.deepStrictEqual(entry.config.extra, { base_url: 'https://gateway.internal/v1' });
+    assert.ok(!('provider_options' in entry.config), 'extra must not be nested under provider_options');
+  });
+
+  test('AC-3: a provider-declared field cannot clobber resolver-owned run_id/case_id/provider_label', () => {
+    const tierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            {
+              provider_kind: 'opencode_cli',
+              model: 'anthropic/claude-haiku-4-5',
+              label: 'oc',
+              agent: 'eval_light',
+              opencode_config: 'opencode.json',
+              project_dir: '../..',
+              format: 'json',
+              log_level: 'info',
+              // Adversarial: a consumer TOML entry that happens to declare
+              // these names should never be able to overwrite the resolver's
+              // own run/case identity — nothing in parseTierConfig forbids
+              // a provider entry from declaring them.
+              run_id: 'attacker-controlled-run-id',
+              case_id: 'attacker-controlled-case-id',
+              provider_label: 'attacker-controlled-label',
+            },
+          ],
+        },
+      },
+    };
+    const result = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light', { runId: 'real-run-id' });
+    const entry = result.providers[0];
+    assert.strictEqual(entry.config.run_id, 'real-run-id', 'resolver-owned run_id must win');
+    assert.notStrictEqual(entry.config.case_id, 'attacker-controlled-case-id', 'resolver-owned case_id must win');
+    assert.strictEqual(entry.config.provider_label, 'oc', 'resolver-owned provider_label (from `label`) must win');
   });
 
   test('run_id is stable across all entries in one call', () => {
@@ -240,6 +377,34 @@ describe('resolveMultiProviderConfig — openhands_agent_server routing', () => 
     assert.strictEqual(entry.config.run_id, 'as-001');
     assert.ok(entry.config.case_id && typeof entry.config.case_id === 'string');
     assert.ok(!('provider_options' in entry.config), 'agent-server kind has no provider_options bag');
+  });
+
+  test('AC-3: a provider-declared field cannot clobber resolver-owned run_id/case_id in the openhands_agent_server branch', () => {
+    const tierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            {
+              provider_kind: 'openhands_agent_server',
+              agent: 'eval_light',
+              openhands_config: 'openhands.json',
+              model: 'openai/gpt-4o-mini',
+              // Adversarial: a consumer TOML entry that happens to declare
+              // these names should never be able to overwrite the resolver's
+              // own run/case identity — nothing in parseTierConfig forbids
+              // a provider entry from declaring them.
+              run_id: 'attacker-controlled-run-id',
+              case_id: 'attacker-controlled-case-id',
+            },
+          ],
+        },
+      },
+    };
+    const result = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light', { runId: 'real-run-id' });
+    const entry = result.providers[0];
+    assert.strictEqual(entry.config.run_id, 'real-run-id', 'resolver-owned run_id must win');
+    assert.notStrictEqual(entry.config.case_id, 'attacker-controlled-case-id', 'resolver-owned case_id must win');
   });
 
   test('non-agent-server kinds still emit BRIDGE_FILE_URL', () => {
@@ -618,5 +783,65 @@ describe('resolveMultiProviderConfig — error cases', () => {
       () => resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'nonexistent'),
       /unknown tier/,
     );
+  });
+});
+
+describe('VD-3912 integration — resolver output feeds a REAL (non-stubbed) OpenCodeCliProvider', () => {
+  // Guard: mock mode bypasses the exact missingField validation this bug
+  // lives in (opencode-cli-provider.js's turn()/callApi() check
+  // OPENCODE_MOCK_MODE before validating config), so a test run under mock
+  // mode would "pass" whether or not the fix is present — a false positive.
+  // Explicitly unset it for this describe block, and restore whatever value
+  // was present beforehand so this file doesn't leak global env state into
+  // whatever runs after it in the same process.
+  let _savedOpencodeMockMode;
+
+  beforeEach(() => {
+    _resetRunId();
+    _savedOpencodeMockMode = process.env.OPENCODE_MOCK_MODE;
+    delete process.env.OPENCODE_MOCK_MODE;
+  });
+
+  afterEach(() => {
+    if (_savedOpencodeMockMode === undefined) {
+      delete process.env.OPENCODE_MOCK_MODE;
+    } else {
+      process.env.OPENCODE_MOCK_MODE = _savedOpencodeMockMode;
+    }
+  });
+
+  test('AC-1/AC-2: resolver output satisfies the real provider\'s missingField check without a manual patch', async () => {
+    const OpenCodeCliProvider = require('./opencode-cli-provider.js');
+    const tierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [
+            {
+              provider_kind: 'opencode_cli',
+              model: 'anthropic/claude-haiku-4-5',
+              label: 'oc',
+              agent: 'eval_light',
+              opencode_config: 'opencode.json',
+              project_dir: '../..',
+              format: 'json',
+              log_level: 'info',
+            },
+          ],
+        },
+      },
+    };
+    const result = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light', { runId: 'integration-001' });
+    const { config } = result.providers[0];
+
+    // Real provider, real config — only the runner is faked, so this never
+    // spawns the actual opencode binary. This is the same construction
+    // _node_bridge.js's opencode_cli dispatch performs in production.
+    const fakeRunner = async () => 'stub output';
+    const provider = new OpenCodeCliProvider({ config, runner: fakeRunner });
+    const response = await provider.callApi('hello', { vars: {} });
+
+    assert.ok(!response.error, `expected no error, got: ${response.error}`);
+    assert.strictEqual(response.output, 'stub output');
   });
 });
