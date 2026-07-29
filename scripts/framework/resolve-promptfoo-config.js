@@ -369,6 +369,7 @@ function _buildCaseId(tierName, providerIndex, scenarioIndex, runId) {
  * @param {number} providerIndex
  * @param {number} scenarioIndex
  * @param {string} runId
+ * @param {object} [runtimeDefaults] - [runtime] shared defaults (VD-3913), entry-first fallback.
  * @returns {object} Promptfoo provider object
  */
 function _buildBridgeProviderEntry(tierName, providerEntry, providerIndex, scenarioIndex, runId, runtimeDefaults = {}) {

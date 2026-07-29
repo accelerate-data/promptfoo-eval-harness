@@ -973,6 +973,56 @@ describe('resolveMultiProviderConfig — [runtime] shared-defaults merge (VD-391
     assert.equal('provider_id' in config, false);
   });
 
+  test('AC-1: falsy [runtime] default values (0, false) still merge in, not just truthy ones', () => {
+    const tierConfig = {
+      version: 'v1',
+      runtime: {
+        print_logs: false,
+        empty_output_retries: 0,
+      },
+      tiers: {
+        light: {
+          providers: [{ provider_kind: 'opencode_cli', agent: 'eval_light', label: 'oc' }],
+        },
+      },
+    };
+    const { providers } = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light');
+    const { config } = providers[0];
+
+    assert.equal(config.print_logs, false);
+    assert.equal(config.empty_output_retries, 0);
+  });
+
+  test('AC-1/AC-2: multiple providers in one tier each get independent per-entry runtime fill, no cross-entry leakage', () => {
+    const tierConfig = {
+      version: 'v1',
+      runtime: {
+        opencode_config: 'opencode.json',
+        project_dir: '../..',
+        format: 'default',
+        log_level: 'ERROR',
+      },
+      tiers: {
+        light: {
+          providers: [
+            { provider_kind: 'opencode_cli', agent: 'eval_light', label: 'a', format: 'json' },
+            { provider_kind: 'opencode_cli', agent: 'eval_light', label: 'b', log_level: 'DEBUG' },
+            { provider_kind: 'opencode_cli', agent: 'eval_light', label: 'c' },
+          ],
+        },
+      },
+    };
+    const { providers } = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light');
+    const [a, b, c] = providers.map((p) => p.config);
+
+    assert.equal(a.format, 'json', 'provider a overrides format');
+    assert.equal(a.log_level, 'ERROR', 'provider a still gets [runtime] log_level');
+    assert.equal(b.format, 'default', 'provider b gets [runtime] format, unaffected by a\'s override');
+    assert.equal(b.log_level, 'DEBUG', 'provider b overrides log_level');
+    assert.equal(c.format, 'default');
+    assert.equal(c.log_level, 'ERROR');
+  });
+
   test('AC-6: resolveConfigFile succeeds end-to-end for a package whose tier relies on [runtime] for shared defaults', () => {
     const SMOKE_CONFIG = 'examples/harness-smoke/promptfooconfig.json';
     const rawTierConfig = {
@@ -997,6 +1047,48 @@ describe('resolveMultiProviderConfig — [runtime] shared-defaults merge (VD-391
     assert.equal(config.project_dir, '../..');
     assert.equal(config.format, 'default');
     assert.equal(config.log_level, 'ERROR');
+  });
+
+  test('AC-6: the resolved config no longer trips the real OpenCodeCliProvider\'s missing-field check ' +
+    '(the exact error VD-3913 was filed against)', async () => {
+    const OpenCodeCliProvider = require('./opencode-cli-provider.js');
+    const savedMockMode = process.env.OPENCODE_MOCK_MODE;
+    delete process.env.OPENCODE_MOCK_MODE;
+    try {
+      const SMOKE_CONFIG = 'examples/harness-smoke/promptfooconfig.json';
+      const rawTierConfig = {
+        version: 'v1',
+        runtime: {
+          opencode_config: 'opencode.json',
+          project_dir: '../..',
+          format: 'default',
+          log_level: 'ERROR',
+        },
+        tiers: {
+          light: {
+            providers: [{ provider_kind: 'opencode_cli', agent: 'eval_light', label: 'oc' }],
+          },
+        },
+      };
+      const resolved = resolveConfigFile(SMOKE_CONFIG, { rawTierConfig });
+      const { config } = resolved.providers[0];
+
+      const fakeRunner = async () => 'stub output';
+      const provider = new OpenCodeCliProvider({ config, runner: fakeRunner });
+      const response = await provider.callApi('hello', { vars: {} });
+
+      assert.ok(
+        !response.error,
+        `expected no error (VD-3913's "OpenCode CLI provider requires agent, opencode_config, ` +
+          `project_dir, format, and log_level" must not resurface), got: ${response.error}`,
+      );
+    } finally {
+      if (savedMockMode === undefined) {
+        delete process.env.OPENCODE_MOCK_MODE;
+      } else {
+        process.env.OPENCODE_MOCK_MODE = savedMockMode;
+      }
+    }
   });
 });
 
