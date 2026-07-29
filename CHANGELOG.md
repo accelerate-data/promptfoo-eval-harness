@@ -11,6 +11,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Versions follo
 
 ---
 
+## [1.7.2] — TBD
+
+### Fixed
+
+- `_buildBridgeProviderEntry()` (`scripts/framework/resolve-promptfoo-config.js`) now
+  merges `config/eval-tiers.toml`'s shared `[runtime]` defaults
+  (`opencode_config`, `project_dir`, `format`, `log_level`, and any other
+  `[runtime]`-level field) into a v1 tier provider entry's config when the
+  entry itself doesn't declare that field, for both the standard bridge
+  branch and the `openhands_agent_server` branch. `[runtime].provider_id`
+  is excluded (it is a v0-only field, not a per-provider config field).
+  Entry-declared fields still win over `[runtime]` defaults. Fixes every
+  v1-tier package that relies on `[runtime]` for shared defaults instead of
+  repeating them per-provider — the gap VD-3912 didn't close (VD-3913).
+
+---
+
 ## [1.7.1] — TBD
 
 ### Fixed

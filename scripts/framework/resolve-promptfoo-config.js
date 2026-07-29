@@ -369,9 +369,10 @@ function _buildCaseId(tierName, providerIndex, scenarioIndex, runId) {
  * @param {number} providerIndex
  * @param {number} scenarioIndex
  * @param {string} runId
+ * @param {object} [runtimeDefaults] - [runtime] shared defaults (VD-3913), entry-first fallback.
  * @returns {object} Promptfoo provider object
  */
-function _buildBridgeProviderEntry(tierName, providerEntry, providerIndex, scenarioIndex, runId) {
+function _buildBridgeProviderEntry(tierName, providerEntry, providerIndex, scenarioIndex, runId, runtimeDefaults = {}) {
   const case_id = _buildCaseId(tierName, providerIndex, scenarioIndex, runId);
 
   if (providerEntry.provider_kind === 'openhands_agent_server') {
@@ -385,6 +386,7 @@ function _buildBridgeProviderEntry(tierName, providerEntry, providerIndex, scena
       id: AGENT_SERVER_FILE_URL,
       label: resolvedLabel,
       config: {
+        ...runtimeDefaults,
         ...rest,
         provider_kind,
         model: model || null,
@@ -407,6 +409,7 @@ function _buildBridgeProviderEntry(tierName, providerEntry, providerIndex, scena
   // conditional spread below). Redaction is shape-agnostic (walks any object
   // recursively), so this has no security/redaction implication.
   const config = {
+    ...runtimeDefaults,
     ...rest,
     provider_kind,
     model: model || null,
@@ -440,6 +443,11 @@ function resolveMultiProviderConfig(tierConfig, scenarios, tierName, opts = {}) 
   const normalized = parseTierConfig(tierConfig, opts.sourcePath || '<input>');
   const runId = opts.runId || getRunId();
 
+  // [runtime] shared defaults (VD-3913): entry-first, [runtime]-as-fallback.
+  // provider_id is v0-only (selects the legacy CLI provider module) and is
+  // never a per-provider bridge config field, so it is excluded here.
+  const { provider_id: _providerId, ...runtimeDefaults } = normalized.runtime || {};
+
   const tiersToProcess = tierName
     ? { [tierName]: normalized.tiers[tierName] }
     : normalized.tiers;
@@ -454,7 +462,7 @@ function resolveMultiProviderConfig(tierConfig, scenarios, tierName, opts = {}) 
     for (let pIdx = 0; pIdx < tier.providers.length; pIdx++) {
       for (let sIdx = 0; sIdx < scenarios.length; sIdx++) {
         providers.push(
-          _buildBridgeProviderEntry(tName, tier.providers[pIdx], pIdx, sIdx, runId),
+          _buildBridgeProviderEntry(tName, tier.providers[pIdx], pIdx, sIdx, runId, runtimeDefaults),
         );
       }
     }
