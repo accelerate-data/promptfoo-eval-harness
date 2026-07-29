@@ -24,7 +24,17 @@ test('resolveConfigFile materializes the default openhands_sdk bridge provider f
   assert.equal(typeof resolved.providers[0].config.run_id, 'string');
   assert.match(resolved.providers[0].config.case_id, /:light:p0:s0$/);
   assert.equal('agent' in resolved.providers[0].config, false);
-  assert.equal('opencode_config' in resolved.providers[0].config, false);
+  // config/eval-tiers.toml's [runtime] table still carries legacy
+  // opencode_config/project_dir/format/log_level (kept for the unused v0
+  // provider_id fallback). VD-3913 merges [runtime] into every v1 provider
+  // entry that doesn't declare the field itself — including this
+  // openhands_sdk entry, which ignores fields it doesn't recognize — so
+  // these now surface as [runtime]'s own values instead of being absent.
+  assert.equal(resolved.providers[0].config.opencode_config, 'opencode.json');
+  assert.equal(resolved.providers[0].config.project_dir, '../..');
+  assert.equal(resolved.providers[0].config.format, 'default');
+  assert.equal(resolved.providers[0].config.log_level, 'ERROR');
+  assert.equal('provider_id' in resolved.providers[0].config, false);
   assert.match(resolved.prompts[0], /harness-smoke/);
 });
 

@@ -845,3 +845,158 @@ describe('VD-3912 integration — resolver output feeds a REAL (non-stubbed) Ope
     assert.strictEqual(response.output, 'stub output');
   });
 });
+
+describe('resolveMultiProviderConfig — [runtime] shared-defaults merge (VD-3913)', () => {
+  beforeEach(() => {
+    _resetRunId();
+  });
+
+  test('AC-1: entry fields absent from [runtime] merge in as defaults on the standard bridge branch', () => {
+    const tierConfig = {
+      version: 'v1',
+      runtime: {
+        opencode_config: 'opencode.json',
+        project_dir: '../..',
+        format: 'default',
+        log_level: 'ERROR',
+      },
+      tiers: {
+        light: {
+          providers: [{ provider_kind: 'opencode_cli', agent: 'eval_light', label: 'oc' }],
+        },
+      },
+    };
+    const { providers } = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light');
+    const { config } = providers[0];
+
+    assert.equal(config.opencode_config, 'opencode.json');
+    assert.equal(config.project_dir, '../..');
+    assert.equal(config.format, 'default');
+    assert.equal(config.log_level, 'ERROR');
+    assert.equal(config.agent, 'eval_light');
+  });
+
+  test('AC-2: a field the entry declares itself wins over the [runtime] default', () => {
+    const tierConfig = {
+      version: 'v1',
+      runtime: {
+        opencode_config: 'opencode.json',
+        project_dir: '../..',
+        format: 'default',
+        log_level: 'ERROR',
+      },
+      tiers: {
+        light: {
+          providers: [
+            { provider_kind: 'opencode_cli', agent: 'eval_light', label: 'oc', format: 'json' },
+          ],
+        },
+      },
+    };
+    const { providers } = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light');
+    const { config } = providers[0];
+
+    assert.equal(config.format, 'json', 'entry-declared format must win over [runtime] default');
+    assert.equal(config.log_level, 'ERROR', '[runtime] still fills fields the entry left open');
+  });
+
+  test('AC-3: a tier config with no [runtime] table resolves unchanged (no spurious keys)', () => {
+    const tierConfig = {
+      version: 'v1',
+      tiers: {
+        light: {
+          providers: [{ provider_kind: 'opencode_cli', agent: 'eval_light', label: 'oc' }],
+        },
+      },
+    };
+    const { providers } = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light');
+    const { config } = providers[0];
+
+    assert.equal(config.agent, 'eval_light');
+    assert.equal(config.opencode_config, undefined);
+    assert.equal(config.project_dir, undefined);
+    assert.equal(config.format, undefined);
+    assert.equal(config.log_level, undefined);
+  });
+
+  test('AC-4: [runtime].provider_id never leaks into a resolved v1 bridge provider config', () => {
+    const tierConfig = {
+      version: 'v1',
+      runtime: {
+        provider_id: 'file://scripts/framework/opencode-cli-provider.js',
+        opencode_config: 'opencode.json',
+        project_dir: '../..',
+        format: 'default',
+        log_level: 'ERROR',
+      },
+      tiers: {
+        light: {
+          providers: [{ provider_kind: 'opencode_cli', agent: 'eval_light', label: 'oc' }],
+        },
+      },
+    };
+    const { providers } = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light');
+    const { config } = providers[0];
+
+    assert.equal('provider_id' in config, false);
+    assert.equal(config.opencode_config, 'opencode.json');
+  });
+
+  test('AC-5: the openhands_agent_server branch merges [runtime] defaults under the same entry-first rule', () => {
+    const tierConfig = {
+      version: 'v1',
+      runtime: {
+        opencode_config: 'opencode.json',
+        project_dir: '../..',
+        format: 'default',
+        log_level: 'ERROR',
+      },
+      tiers: {
+        light: {
+          providers: [
+            {
+              provider_kind: 'openhands_agent_server',
+              model: 'anthropic/claude-haiku-4-5',
+              label: 'oh',
+              agent: 'eval_light',
+              format: 'json',
+            },
+          ],
+        },
+      },
+    };
+    const { providers } = resolveMultiProviderConfig(tierConfig, makeScenarios(1), 'light');
+    const { config } = providers[0];
+
+    assert.equal(config.project_dir, '../..', '[runtime] default fills a field the entry left open');
+    assert.equal(config.format, 'json', 'entry-declared format still wins over [runtime]');
+    assert.equal('provider_id' in config, false);
+  });
+
+  test('AC-6: resolveConfigFile succeeds end-to-end for a package whose tier relies on [runtime] for shared defaults', () => {
+    const SMOKE_CONFIG = 'examples/harness-smoke/promptfooconfig.json';
+    const rawTierConfig = {
+      version: 'v1',
+      runtime: {
+        opencode_config: 'opencode.json',
+        project_dir: '../..',
+        format: 'default',
+        log_level: 'ERROR',
+      },
+      tiers: {
+        light: {
+          providers: [{ provider_kind: 'opencode_cli', agent: 'eval_light', label: 'oc' }],
+        },
+      },
+    };
+    const resolved = resolveConfigFile(SMOKE_CONFIG, { rawTierConfig });
+    const { config } = resolved.providers[0];
+
+    assert.equal(config.agent, 'eval_light');
+    assert.equal(config.opencode_config, 'opencode.json');
+    assert.equal(config.project_dir, '../..');
+    assert.equal(config.format, 'default');
+    assert.equal(config.log_level, 'ERROR');
+  });
+});
+
