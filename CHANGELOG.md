@@ -9,6 +9,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Versions follo
 
 ## [Unreleased]
 
+---
+
+## [1.7.1] — TBD
+
 ### Fixed
 
 - `resolveConfigFile()` / `_buildBridgeProviderEntry()` (`scripts/framework/resolve-promptfoo-config.js`)
