@@ -304,6 +304,11 @@ test('load_local_env does NOT overwrite pre-existing process.env keys', () => {
   }
 });
 
+// NOTE (VD-4204): this pin was deliberately advanced to the commit that added
+// the OPENCODE_MODEL env-var override (--model argv flag) to the base file.
+// That was a reviewed, intentional evolution of the §7.4 contract — not
+// drift — per docs/design.md § "OpenCode CLI: Base + Sibling". Any diff
+// against THIS pin going forward is still an unreviewed-change signal.
 test('base file scripts/framework/opencode-cli-provider.js is byte-identical from phase-04 parent SHA', () => {
   const shaFile = path.join(EVAL_ROOT, 'tests', '_fixtures', 'phase-04-parent.sha');
   if (!fs.existsSync(shaFile)) {

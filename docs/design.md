@@ -467,6 +467,16 @@ the byte-identity guard
 fails if the parent SHA stored in `tests/_fixtures/phase-04-parent.sha`
 no longer matches `HEAD` for that file.
 
+**VD-4204 update:** the pin was deliberately advanced once, to add an
+`OPENCODE_MODEL` env-var override (`--model <value>` on the CLI argv,
+mirroring `OPENHANDS_MODEL_OVERRIDE` in `openhands-agent-server-provider.js`).
+This was a reviewed, intentional evolution of the base contract, not an
+accidental edit slipping past the guard — the guard's job is to make *future*
+edits impossible by accident, not to freeze the base forever. The sibling
+`opencode-cli-plugin-provider.js` was NOT updated to match; it has its own,
+independently-duplicated argv-building code and does not currently support
+`OPENCODE_MODEL`.
+
 Plugin features live in a **sibling**, not a subclass:
 
 ```text
