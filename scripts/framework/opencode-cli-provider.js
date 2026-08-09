@@ -7,12 +7,14 @@
  * while preserving the existing callApi() façade for backward compatibility
  * with _node_bridge.js inproc dispatch.
  *
- * §7.4 five preserved behaviors — keyed to line numbers below:
+ * §7.4 six preserved behaviors — keyed to line numbers below:
  *   B1: env passthrough     — callWithEmptyOutputRetries() env block (~L97)
  *   B2: argv shape          — args array assembly (~L79)
  *   B3: exit-code mapping   — runOpenCode() close handler (~L158)
  *   B4: mock-mode bypass    — turn() OPENCODE_MOCK_MODE check (~L48)
  *   B5: redaction-friendly  — error messages never echo env values (~L165)
+ *   B6: model override      — OPENCODE_MODEL env var → --model <value> in
+ *                             callWithEmptyOutputRetries() argv (~L180, VD-4204)
  *
  * Metadata stamping, transcript shaping, and vars.turns validation are NOT
  * done here — they belong to _node_bridge.js per spec §1.5 + §2.6 + §7.4.
@@ -177,6 +179,17 @@ async function callWithEmptyOutputRetries(prompt, config, runner, callOptions) {
     '--log-level',
     config.log_level,
   ];
+  // B6: model override (VD-4204) — OPENCODE_MODEL, trimmed, wins over
+  // opencode.json's per-agent model for this invocation. Empty/whitespace-only
+  // is treated as unset, matching OPENHANDS_MODEL_OVERRIDE's semantic in
+  // openhands-agent-server-provider.js. This provider never reads/parses
+  // opencode.json itself (only forwards its path via OPENCODE_CONFIG, B1),
+  // so this is the only place a model value can come from besides OpenCode's
+  // own default resolution.
+  const modelOverride = process.env.OPENCODE_MODEL;
+  if (typeof modelOverride === 'string' && modelOverride.trim() !== '') {
+    args.push('--model', modelOverride.trim());
+  }
   if (config.print_logs) {
     args.push('--print-logs');
   }
