@@ -600,12 +600,14 @@ describe('Section 5 — OPENCODE_MODEL override (VD-4204)', () => {
   // 3 separate near-identical tests here as over-testing relative to this
   // codebase's own precedent for the analogous OPENHANDS_MODEL_OVERRIDE
   // feature, which covers empty/blank/trim in far fewer cases).
+  // AC-3 cases: empty/whitespace-only input must not produce --model flag (unset-equivalent).
+  // AC-1 case: trimmed value must be applied to --model flag (proves override takes effect after normalization).
   for (const [envValue, expectModel] of [
-    ['', null],                                    // empty string → treated as unset (matches OPENHANDS_MODEL_OVERRIDE semantic)
-    ['   ', null],                                  // whitespace-only → treated as unset
-    ['  anthropic/claude-sonnet-5  ', 'anthropic/claude-sonnet-5'], // value is trimmed before use
+    ['', null],                                    // AC-3: empty string → treated as unset (matches OPENHANDS_MODEL_OVERRIDE semantic)
+    ['   ', null],                                  // AC-3: whitespace-only → treated as unset
+    ['  anthropic/claude-sonnet-5  ', 'anthropic/claude-sonnet-5'], // AC-1: value is trimmed before use
   ]) {
-    test(`OPENCODE_MODEL=${JSON.stringify(envValue)} → ${expectModel === null ? 'no --model flag' : `--model ${expectModel}`}`, () => withEnv(envValue, async () => {
+    test(`AC-${expectModel === null ? '3' : '1'} edge case: OPENCODE_MODEL=${JSON.stringify(envValue)} → ${expectModel === null ? 'no --model flag' : `--model ${expectModel} (trimmed)`}`, () => withEnv(envValue, async () => {
       const { init, turn } = loadProvider();
       const runner = makeRecordingRunner('ok');
       const session = await init({ ...VALID_CONFIG, _runner: runner });
