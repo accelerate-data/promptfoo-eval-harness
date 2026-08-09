@@ -73,7 +73,9 @@ per tier; the full matrix lives upstream in `docs/design.md` →
 Auth cheatsheet — put these in `tests/evals/.env`:
 
 - `opencode_cli` — inherits the calling shell's env; OpenCode's own
-  config (`opencode.json`, `OPENCODE_CONFIG`).
+  config (`opencode.json`, `OPENCODE_CONFIG`). Optional: `OPENCODE_MODEL`
+  (VD-4204) — per-run model swap without editing `opencode.json`; applies
+  to this base provider only, **not** the `opencode-cli-plugin` sibling.
 - `opencode_sdk` — routed by `model.providerID`: `openai/…` →
   `OPENAI_API_KEY`, `anthropic/…` → `ANTHROPIC_API_KEY`, `opencode-go/…`
   → `OPENCODE_API_KEY`.

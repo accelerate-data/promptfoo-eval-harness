@@ -76,7 +76,7 @@ each tier uses, then populate `tests/evals/.env`. Compact lookup
 
 | `provider_kind` | Required in `tests/evals/.env` |
 | --- | --- |
-| `opencode_cli` | Inherits the calling shell's env; OpenCode handles its own auth via `opencode.json` / `OPENCODE_CONFIG`. Add `OPENCODE_API_KEY` only if `opencode.json` references it directly. Optional: `OPENCODE_MODEL` (VD-4204) — per-run model swap without editing `opencode.json`; applies to this base provider only, **not** the `opencode-cli-plugin` sibling (see next row). |
+| `opencode_cli` | Inherits the calling shell's env; OpenCode handles its own auth via `opencode.json` / `OPENCODE_CONFIG`. Add `OPENCODE_API_KEY` only if `opencode.json` references it directly. Optional: `OPENCODE_MODEL` (VD-4204) — per-run model swap without editing `opencode.json`; applies to this base provider only, **not** the `opencode-cli-plugin` sibling (see the Provider Key Matrix in the Reference section below). |
 | `opencode_sdk` | Model-prefix routed: `openai/…` → `OPENAI_API_KEY`, `anthropic/…` → `ANTHROPIC_API_KEY`, `opencode-go/…` → `OPENCODE_API_KEY` |
 | `codex_sdk` | `OPENAI_API_KEY=sk-…` (optional `OPENAI_BASE_URL=https://…` to route through a gateway) |
 | `openhands_sdk` — gateway mode | `OPENHANDS_API_KEY=oh-…` + `OPENHANDS_BASE_URL=https://…` (optional `OPENHANDS_MODEL_OVERRIDE=anthropic/claude-…` — beats the tier `model` field) |

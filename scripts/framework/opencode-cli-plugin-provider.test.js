@@ -318,6 +318,15 @@ test('base file scripts/framework/opencode-cli-provider.js is byte-identical fro
   const sha = fs.readFileSync(shaFile, 'utf8').trim();
   assert.match(sha, /^[0-9a-f]{40}$/, 'stamp file must contain a full 40-char SHA');
   try {
+    execFileSync('git', ['cat-file', '-e', `${sha}^{commit}`], { cwd: EVAL_ROOT, stdio: 'pipe' });
+  } catch (resolveErr) {
+    assert.fail(
+      `phase-04 parent SHA ${sha} is not resolvable in this clone — check fetch depth ` +
+        '(shallow clone?) or that the branch was merged with a merge commit (not squash/rebase, ' +
+        'which can make branch-local commits unreachable).',
+    );
+  }
+  try {
     execFileSync(
       'git',
       ['diff', '--exit-code', sha, 'HEAD', '--', 'scripts/framework/opencode-cli-provider.js'],

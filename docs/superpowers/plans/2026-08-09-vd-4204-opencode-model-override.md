@@ -394,6 +394,26 @@ git add docs/setup.md
 git commit -m "docs(VD-4204): document OPENCODE_MODEL for the opencode_cli provider"
 ```
 
+### Merge-strategy requirement (must survive into the PR description)
+
+`tests/_fixtures/phase-04-parent.sha` now pins a commit that only exists on
+this branch (the Task 2 commit that added the `OPENCODE_MODEL` argv
+override). That SHA is not reachable from `main` until this branch lands.
+
+**This branch MUST be merged into `main` with a real merge commit — NOT
+squash-merged and NOT rebase-merged.** Squash or rebase rewrites/collapses
+the branch-local commits, so the pinned SHA becomes unreachable on `main`
+once history is rewritten, and the byte-identity guard test
+(`opencode-cli-plugin-provider.test.js` → "base file ... is byte-identical
+from phase-04 parent SHA") starts failing with a `git cat-file`/`bad
+object` style error on every subsequent CI run on `main` — not a real
+divergence, just an unreachable pin.
+
+Whoever raises the PR for this branch MUST carry this requirement into the
+PR description (e.g. "Merge strategy: merge commit only — do not
+squash/rebase, see `phase-04-parent.sha`") so reviewers and the merge
+button don't default to squash.
+
 ---
 
 ## Task 4: Final AC verification pass
