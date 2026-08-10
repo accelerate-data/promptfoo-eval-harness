@@ -528,3 +528,96 @@ describe('Section 4 — Regression cases', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Section 5 — OPENCODE_MODEL override (VD-4204)
+// ---------------------------------------------------------------------------
+
+describe('Section 5 — OPENCODE_MODEL override (VD-4204)', () => {
+  function withEnv(value, fn) {
+    const prev = process.env.OPENCODE_MODEL;
+    if (value === undefined) {
+      delete process.env.OPENCODE_MODEL;
+    } else {
+      process.env.OPENCODE_MODEL = value;
+    }
+    return fn().finally(() => {
+      if (prev === undefined) delete process.env.OPENCODE_MODEL;
+      else process.env.OPENCODE_MODEL = prev;
+    });
+  }
+
+  test('AC-1 & AC-2: OPENCODE_MODEL set — argv includes --model <value>, and it is the only source of that value', () => withEnv('anthropic/claude-opus-5', async () => {
+    // AC-2 boundary note: this provider never opens or parses opencode_config's
+    // file contents (verified: callWithEmptyOutputRetries only resolves its
+    // *path* and forwards it via OPENCODE_CONFIG, B1) — there is no code path
+    // here that could read a per-agent model out of that file, so "the model
+    // does not come from opencode.json" is a structural fact about this
+    // provider, not a distinct runtime behavior a second test could exercise.
+    // A prior draft of this test set a differently-named opencode_config path
+    // to "prove" AC-2 separately from AC-1; adversarial review correctly
+    // flagged that as a duplicate assertion with no differential coverage
+    // (any implementation passing AC-1 passes it too), so it's folded in here
+    // instead of kept as a same-shape sibling test.
+    const { init, turn } = loadProvider();
+    const runner = makeRecordingRunner('ok');
+    const session = await init({ ...VALID_CONFIG, _runner: runner });
+    await turn(session, 'prompt');
+    const { args } = runner.calls[0];
+    const modelIdx = args.indexOf('--model');
+    assert.ok(modelIdx !== -1, 'argv must include --model when OPENCODE_MODEL is set');
+    assert.strictEqual(args[modelIdx + 1], 'anthropic/claude-opus-5', '--model value must equal OPENCODE_MODEL');
+  }));
+
+  test('AC-3: OPENCODE_MODEL unset — argv shape is byte-for-byte identical to today (no --model flag)', () => withEnv(undefined, async () => {
+    const { init, turn } = loadProvider();
+    const runner = makeRecordingRunner('argv snapshot output');
+    const session = await init({ ...VALID_CONFIG, agent: 'eval_standard', format: 'json', log_level: 'WARN', _runner: runner });
+    await turn(session, 'the prompt text');
+    const { args } = runner.calls[0];
+    assert.deepStrictEqual(
+      args.slice(0, 9),
+      ['run', '--agent', 'eval_standard', '--dir', args[4], '--format', 'json', '--log-level', 'WARN'],
+      'fixed prefix must be unchanged',
+    );
+    assert.ok(!args.includes('--model'), '--model must NOT appear when OPENCODE_MODEL is unset');
+    assert.strictEqual(args[args.length - 1], 'the prompt text', 'last arg must still be the prompt');
+  }));
+
+  test('AC-4: override requires no config field at all — only the env var', () => withEnv('opencode-go/qwen3.5-plus', async () => {
+    const { init, turn } = loadProvider();
+    const runner = makeRecordingRunner('ok');
+    // VALID_CONFIG has no model-shaped field whatsoever — proves the
+    // override path needs nothing added to opencode.json or the tier TOML.
+    const session = await init({ ...VALID_CONFIG, _runner: runner });
+    await turn(session, 'prompt');
+    const { args } = runner.calls[0];
+    assert.ok(args.includes('--model'), '--model must appear from the env var alone');
+    assert.strictEqual(args[args.indexOf('--model') + 1], 'opencode-go/qwen3.5-plus');
+  }));
+
+  // Edge cases collapsed into one table-driven test (adversarial review flagged
+  // 3 separate near-identical tests here as over-testing relative to this
+  // codebase's own precedent for the analogous OPENHANDS_MODEL_OVERRIDE
+  // feature, which covers empty/blank/trim in far fewer cases).
+  // AC-3 cases: empty/whitespace-only input must not produce --model flag (unset-equivalent).
+  // AC-1 case: trimmed value must be applied to --model flag (proves override takes effect after normalization).
+  for (const [envValue, expectModel] of [
+    ['', null],                                    // AC-3: empty string → treated as unset (matches OPENHANDS_MODEL_OVERRIDE semantic)
+    ['   ', null],                                  // AC-3: whitespace-only → treated as unset
+    ['  anthropic/claude-sonnet-5  ', 'anthropic/claude-sonnet-5'], // AC-1: value is trimmed before use
+  ]) {
+    test(`AC-${expectModel === null ? '3' : '1'} edge case: OPENCODE_MODEL=${JSON.stringify(envValue)} → ${expectModel === null ? 'no --model flag' : `--model ${expectModel} (trimmed)`}`, () => withEnv(envValue, async () => {
+      const { init, turn } = loadProvider();
+      const runner = makeRecordingRunner('ok');
+      const session = await init({ ...VALID_CONFIG, _runner: runner });
+      await turn(session, 'prompt');
+      const { args } = runner.calls[0];
+      if (expectModel === null) {
+        assert.ok(!args.includes('--model'), `OPENCODE_MODEL=${JSON.stringify(envValue)} must not produce a --model flag`);
+      } else {
+        assert.strictEqual(args[args.indexOf('--model') + 1], expectModel, 'value must be trimmed before use');
+      }
+    }));
+  }
+});
