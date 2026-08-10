@@ -11,6 +11,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Versions follo
 
 ---
 
+## [1.8.0] — TBD
+
+### Added
+
+- `OPENCODE_MODEL` env-var override for the active OpenCode CLI eval
+  provider (`scripts/framework/opencode-cli-provider.js`). When set to a
+  non-empty (post-trim) string, it is passed as `--model <value>` on the
+  CLI argv for that run, taking precedence over `opencode.json`'s
+  per-agent `model` field — letting a single local eval run swap models
+  without editing `opencode.json` or any other git-tracked config.
+  Empty/whitespace-only is treated as unset, matching the existing
+  `OPENHANDS_MODEL_OVERRIDE` semantic in `openhands-agent-server-provider.js`.
+  When unset, argv is unchanged from prior releases (VD-4204).
+- `tests/_fixtures/phase-04-parent.sha`'s byte-identity guard pin was
+  deliberately advanced to the commit introducing the above change — a
+  reviewed, intentional evolution of the guarded base-provider contract,
+  not drift. See `docs/design.md` § "OpenCode CLI: Base + Sibling" for the
+  guard's updated rationale.
+
+---
+
 ## [1.7.2] — TBD
 
 ### Fixed
