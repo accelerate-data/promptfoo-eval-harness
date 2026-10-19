@@ -7,14 +7,19 @@
  * while preserving the existing callApi() façade for backward compatibility
  * with _node_bridge.js inproc dispatch.
  *
- * §7.4 six preserved behaviors — keyed to line numbers below:
- *   B1: env passthrough     — callWithEmptyOutputRetries() env block (~L97)
- *   B2: argv shape          — args array assembly (~L79)
- *   B3: exit-code mapping   — runOpenCode() close handler (~L158)
- *   B4: mock-mode bypass    — turn() OPENCODE_MOCK_MODE check (~L48)
- *   B5: redaction-friendly  — error messages never echo env values (~L165)
- *   B6: model override      — OPENCODE_MODEL env var → --model <value> in
- *                             callWithEmptyOutputRetries() argv (~L180, VD-4204)
+ * §7.4 six preserved behaviors — keyed to the constructs below (not line
+ * numbers, which drift):
+ *   B1: env passthrough     — callWithEmptyOutputRetries() env block
+ *   B2: argv shape          — buildRunArgs() in opencode-cli-invocation.js
+ *   B3: exit-code mapping   — runOpenCode() close handler
+ *   B4: mock-mode bypass    — turn() OPENCODE_MOCK_MODE check
+ *   B5: redaction-friendly  — error messages never echo env values
+ *   B6: model override      — OPENCODE_MODEL env var → --model <value>
+ *                             (buildRunArgs() modelOverride, VD-4204)
+ *
+ * B2 is generation-aware (VD-7010): the v1 argv emitted here is byte-for-byte
+ * the locked shape, and OpenCode v2 — which removed `run --dir` — is served by
+ * the v2 shape in opencode-cli-invocation.js.
  *
  * Metadata stamping, transcript shaping, and vars.turns validation are NOT
  * done here — they belong to _node_bridge.js per spec §1.5 + §2.6 + §7.4.
@@ -24,7 +29,16 @@ const { spawn } = require('node:child_process');
 const path = require('node:path');
 
 const { EVAL_ROOT } = require('./roots');
+const {
+  resolveMajor,
+  buildRunArgs,
+  resolveSpawnCwd,
+} = require('./opencode-cli-invocation');
 const DEFAULT_STATE_HOME = path.join(EVAL_ROOT, '.tmp', 'opencode-state');
+
+// The binary this provider spawns (runOpenCode) — generation detection probes
+// this same command, so a v1/v2 decision always describes the binary in play.
+const OPENCODE_COMMAND = 'opencode';
 
 // ---------------------------------------------------------------------------
 // Lifecycle API (spec §1.2)
@@ -167,18 +181,10 @@ async function callWithEmptyOutputRetries(prompt, config, runner, callOptions) {
   const opencodeConfig = path.resolve(EVAL_ROOT, config.opencode_config);
   const projectDir = path.resolve(EVAL_ROOT, config.project_dir);
 
-  // B2: argv shape — must be preserved byte-for-byte (§7.4)
-  const args = [
-    'run',
-    '--agent',
-    config.agent,
-    '--dir',
-    projectDir,
-    '--format',
-    config.format,
-    '--log-level',
-    config.log_level,
-  ];
+  // B2: argv shape — v1 is byte-for-byte the locked shape; the v2 shape (no
+  // `--dir`, `--standalone`, lowercase log level) comes from the shared
+  // generation-aware builder (VD-7010).
+  //
   // B6: model override (VD-4204) — OPENCODE_MODEL, trimmed, wins over
   // opencode.json's per-agent model for this invocation. Empty/whitespace-only
   // is treated as unset, matching OPENHANDS_MODEL_OVERRIDE's semantic in
@@ -186,19 +192,25 @@ async function callWithEmptyOutputRetries(prompt, config, runner, callOptions) {
   // opencode.json itself (only forwards its path via OPENCODE_CONFIG, B1),
   // so this is the only place a model value can come from besides OpenCode's
   // own default resolution.
-  const modelOverride = process.env.OPENCODE_MODEL;
-  if (typeof modelOverride === 'string' && modelOverride.trim() !== '') {
-    args.push('--model', modelOverride.trim());
-  }
-  if (config.print_logs) {
-    args.push('--print-logs');
-  }
+  const cliMajor = await resolveMajor({ runnerCommand: OPENCODE_COMMAND, env: process.env });
+  const args = buildRunArgs({
+    major: cliMajor,
+    agent: config.agent,
+    format: config.format,
+    logLevel: config.log_level,
+    projectDir,
+    modelOverride: process.env.OPENCODE_MODEL,
+    printLogs: !!config.print_logs,
+  });
+  // v1 keeps cwd = EVAL_ROOT (`--dir` carries the project); v2 has no `--dir`,
+  // so cwd carries project_dir and `--standalone` keeps OPENCODE_CONFIG live.
+  const spawnCwd = resolveSpawnCwd({ major: cliMajor, evalRoot: EVAL_ROOT, projectDir });
 
   while (attempt < maxAttempts) {
     attempt += 1;
     // B1: env passthrough — process.env spread ensures ANTHROPIC_API_KEY et al. reach the child
     const output = await runner([...args, prompt], {
-      cwd: EVAL_ROOT,
+      cwd: spawnCwd,
       env: {
         ...process.env,
         OPENCODE_CONFIG: opencodeConfig,
@@ -242,7 +254,7 @@ function normalizeRetryCount(value) {
  */
 function runOpenCode(args, options) {
   return new Promise((resolve, reject) => {
-    const child = spawn('opencode', args, {
+    const child = spawn(OPENCODE_COMMAND, args, {
       cwd: options.cwd,
       env: options.env,
       stdio: ['ignore', 'pipe', 'pipe'],

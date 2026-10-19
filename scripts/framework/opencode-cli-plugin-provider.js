@@ -9,14 +9,16 @@
 // selected by consumers via `framework://opencode-cli-plugin-provider.js`.
 //
 // Shape A (subclass) is INFEASIBLE: the base's `callApi` delegates to a
-// module-local helper (`callWithEmptyOutputRetries` at opencode-cli-provider.js
-// :123-141 / :162) that cannot be overridden by `extends`. The sibling
-// therefore owns its own `callApi` and re-implements the ~8-line empty-output
-// retry loop inline. The base instance is retained ONLY for `id()` parity and
-// for consuming the sole base export `runOpenCode`. Every other helper
-// (`runOpenCodeCaptureAll`, `loadLocalEnv`, `splitCommand`,
-// `buildOpenCodeInvocation`, `parseEnvLine`, `loadEnvFile`) is duplicated/
-// ported into this file.
+// module-local helper (`callWithEmptyOutputRetries`) that cannot be overridden
+// by `extends`. The sibling therefore owns its own `callApi` and re-implements
+// the ~8-line empty-output retry loop inline. The base instance is retained
+// ONLY for `id()` parity and for consuming the sole base export `runOpenCode`.
+// Each helper the sibling needs is either ported into this file
+// (`runOpenCodeCaptureAll`, `loadLocalEnv`, `buildOpenCodeInvocation`,
+// `parseEnvLine`, `loadEnvFile`) or shared from a framework module — as of
+// VD-7010 the CLI-generation helpers (`splitCommand`, `buildRunArgs`,
+// `resolveSpawnCwd`, `resolveMajor`) live in `opencode-cli-invocation.js` and
+// are imported by both the base and this sibling.
 //
 // Opt-in tier-config keys (all in phase-01 allowlist):
 //   bootstrap_prompt          — string prepended to every prompt
@@ -34,6 +36,12 @@
 // Transport name (run metadata `transport` field): `opencode_cli_plugin`.
 // Concurrency: acquires `opencode_cli_plugin` kind (separate slot pool from
 // the base `opencode_cli` transport).
+//
+// Generation-aware argv (VD-7010): `splitCommand`, the v1/v2 argv builder, the
+// spawn-cwd rule, and CLI-generation detection are shared with the base through
+// `opencode-cli-invocation.js`. Detection probes the command the selected runner
+// will actually start: the capture path honours the runner-command override,
+// the default path is the base's `opencode`.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -42,6 +50,12 @@ const { spawn } = require('node:child_process');
 const OpenCodeCliProvider = require('./opencode-cli-provider');
 const { runOpenCode } = OpenCodeCliProvider;
 const { EVAL_ROOT } = require('./roots');
+const {
+  splitCommand,
+  resolveMajor,
+  buildRunArgs,
+  resolveSpawnCwd,
+} = require('./opencode-cli-invocation');
 const { writeProviderRunMetadata, writeTrajectory } = require('./provider-run-metadata');
 const { acquire } = require('./concurrency');
 
@@ -92,39 +106,21 @@ function loadLocalEnv() {
   loadEnvFile(path.resolve(EVAL_ROOT, '.env'));
 }
 
-function splitCommand(command) {
-  const tokens = [];
-  let current = '';
-  let quote = null;
-  for (let i = 0; i < command.length; i += 1) {
-    const char = command[i];
-    if (quote) {
-      if (char === quote) {
-        quote = null;
-      } else if (char === '\\' && quote === '"' && i + 1 < command.length) {
-        current += command[i + 1];
-        i += 1;
-      } else {
-        current += char;
-      }
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      quote = char;
-      continue;
-    }
-    if (/\s/.test(char)) {
-      if (current) {
-        tokens.push(current);
-        current = '';
-      }
-      continue;
-    }
-    current += char;
-  }
-  if (quote) throw new Error(`Unclosed quote in OPENCODE_RUNNER_COMMAND: ${command}`);
-  if (current) tokens.push(current);
-  return tokens;
+/**
+ * The command whose CLI generation this run must match — the process the
+ * selected runner actually starts. `capture_on_failure` is what selects
+ * `runOpenCodeCaptureAll`, the only runner that honours the runner-command
+ * override; the base `runOpenCode` spawns plain `opencode`, so probing the
+ * override without capture would name a binary this run never starts
+ * (VD-7010).
+ *
+ * @param {boolean} captureOnFailure
+ * @param {string|undefined} override
+ * @returns {string}
+ */
+function _resolveProbeCommand(captureOnFailure, override) {
+  if (!captureOnFailure) return DEFAULT_OPENCODE_COMMAND;
+  return override || process.env.OPENCODE_RUNNER_COMMAND || DEFAULT_OPENCODE_COMMAND;
 }
 
 function buildOpenCodeInvocation(args, env, override) {
@@ -273,10 +269,26 @@ function makeOpenCodeCliPluginProvider(options = {}) {
           });
         }
 
-        const args = ['run', '--agent', cfg.agent, '--dir', workspace];
-        if (cfg.format) args.push('--format', cfg.format);
-        if (cfg.log_level) args.push('--log-level', cfg.log_level);
-        if (cfg.print_logs) args.push('--print-logs');
+        // VD-7010: v1 keeps the locked argv; v2 drops `--dir` (the spawn cwd
+        // carries the project) and adds `--standalone`, which is what makes
+        // OPENCODE_CONFIG resolve for an out-of-cwd config.
+        const cliMajor = await resolveMajor({
+          runnerCommand: _resolveProbeCommand(settings.captureOnFailure, settings.opencodeRunnerCommand),
+          env: process.env,
+        });
+        const args = buildRunArgs({
+          major: cliMajor,
+          agent: cfg.agent,
+          format: cfg.format,
+          logLevel: cfg.log_level,
+          projectDir: workspace,
+          printLogs: !!cfg.print_logs,
+        });
+        const spawnCwd = resolveSpawnCwd({
+          major: cliMajor,
+          evalRoot: EVAL_ROOT,
+          projectDir: workspace,
+        });
 
         const env = {
           ...process.env,
@@ -294,7 +306,7 @@ function makeOpenCodeCliPluginProvider(options = {}) {
           let rawOutput;
           try {
             rawOutput = await settings.runner([...args, finalPrompt], {
-              cwd: EVAL_ROOT,
+              cwd: spawnCwd,
               env,
               signal: opts.signal || opts.abortSignal,
               opencodeRunnerCommand: settings.opencodeRunnerCommand,
@@ -341,4 +353,5 @@ module.exports.__private = {
   _resolveWorkspace,
   _resolvePluginLink,
   _resolveParser,
+  _resolveProbeCommand,
 };
