@@ -9,17 +9,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Versions follo
 
 ## [Unreleased]
 
+---
+
+## [1.9.1] — TBD
+
 ### Security
 
 - Refreshed the dependency tree to clear the Dependabot advisories reachable
   from this package: `promptfoo` 0.121.17 → 0.124.1, `@opencode-ai/sdk`
   1.17.13 → 1.19.3, `@openai/codex` / `@openai/codex-sdk` 0.142.x → 0.163.0,
-  `js-yaml` → 5.5.0, `smol-toml` → 1.9.1, `ws` → 8.22.0, and
-  `markdownlint-cli` → 0.49.1, followed by `npm audit fix`. Local `npm audit`
-  drops from 59 vulnerable packages (3 critical) to 13, none critical; the
-  remainder sit inside `promptfoo`'s and `markdownlint-cli`'s own trees and
+  `js-yaml` → 5.5.0, `smol-toml` → 1.9.1, `ws` → 8.22.0 and
+  `markdownlint-cli` → 0.49.1, followed by `npm audit fix`. `js-yaml` and
+  `smol-toml` are also forced through `overrides`, because both were resolved a
+  second time inside `markdownlint-cli`'s tree at versions still inside their
+  advisories' affected ranges — bumping the direct declaration alone left those
+  advisories open. Local `npm audit` drops from 59 vulnerable packages
+  (3 critical, 27 high) to 11 (7 high, 4 low; none critical, none moderate).
+  The remainder sit inside `promptfoo`'s and `markdownlint-cli`'s own trees and
   need those packages to adopt the patched transitive versions. Verified with
-  the unit suite and every mock-scenario lane that needs no live key.
+  the unit suite, `npm ci` under npm 10, and every mock-scenario lane that needs
+  no live key.
 
 ---
 
