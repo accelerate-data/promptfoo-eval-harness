@@ -30,6 +30,12 @@ const path = require('node:path');
 
 const PROVIDER_PATH = path.resolve(__dirname, 'opencode-cli-provider.js');
 
+// VD-7010: the argv snapshots below lock the v1 shape, so the CLI generation is
+// pinned rather than probed — otherwise every expectation would depend on
+// whichever OpenCode binary the machine happens to have installed. Section 6
+// overrides this var to exercise the v2 shape.
+process.env.OPENCODE_CLI_MAJOR = '1';
+
 /** Clear require cache so each test group loads a fresh module. */
 function loadProvider() {
   delete require.cache[PROVIDER_PATH];
@@ -620,4 +626,87 @@ describe('Section 5 — OPENCODE_MODEL override (VD-4204)', () => {
       }
     }));
   }
+});
+
+// ---------------------------------------------------------------------------
+// Section 6 — OpenCode v2 argv + cwd (VD-7010)
+// ---------------------------------------------------------------------------
+//
+// v2 removed `run --dir` and the working directory became the project, so the
+// same config produces a different argv *and* a different spawn cwd. Both are
+// asserted here: pinning only the argv would let a regression drop the project
+// dir on the floor.
+
+describe('Section 6 — OpenCode v2 invocation (VD-7010)', () => {
+  function withCliMajor(value, fn) {
+    const prev = process.env.OPENCODE_CLI_MAJOR;
+    process.env.OPENCODE_CLI_MAJOR = value;
+    return fn().finally(() => {
+      if (prev === undefined) delete process.env.OPENCODE_CLI_MAJOR;
+      else process.env.OPENCODE_CLI_MAJOR = prev;
+    });
+  }
+
+  test('v2: argv drops --dir, adds --standalone, and lowercases --log-level', () => withCliMajor('2', async () => {
+    const { init, turn } = loadProvider();
+    const runner = makeRecordingRunner('argv snapshot output');
+    const session = await init({
+      ...VALID_CONFIG,
+      agent: 'eval_standard',
+      format: 'json',
+      log_level: 'WARN',
+      print_logs: true,
+      _runner: runner,
+    });
+    await turn(session, 'the prompt text');
+
+    const { args } = runner.calls[0];
+    assert.deepEqual(args, [
+      'run', '--standalone', '--agent', 'eval_standard',
+      '--format', 'json', '--log-level', 'warn',
+      '--print-logs',
+      'the prompt text',
+    ]);
+  }));
+
+  test('v2: the runner runs from project_dir, because --dir no longer carries it', () => withCliMajor('2', async () => {
+    const { init, turn } = loadProvider();
+    const runner = makeRecordingRunner('ok');
+    const session = await init({ ...VALID_CONFIG, _runner: runner });
+    await turn(session, 'hello');
+
+    assert.strictEqual(
+      runner.calls[0].options.cwd,
+      VALID_CONFIG.project_dir,
+      'v2 must spawn in project_dir',
+    );
+  }));
+
+  test('v1 still runs from the eval root and carries the project in argv', async () => {
+    const { EVAL_ROOT } = require('./roots');
+    const { init, turn } = loadProvider();
+    const runner = makeRecordingRunner('ok');
+    const session = await init({ ...VALID_CONFIG, _runner: runner });
+    await turn(session, 'hello');
+
+    const { args, options } = runner.calls[0];
+    assert.strictEqual(options.cwd, EVAL_ROOT, 'v1 spawn cwd is the eval root');
+    assert.strictEqual(args[args.indexOf('--dir') + 1], VALID_CONFIG.project_dir, 'v1 carries the project via --dir');
+  });
+
+  test('v2 keeps the OPENCODE_MODEL override', () => withCliMajor('2', async () => {
+    const prev = process.env.OPENCODE_MODEL;
+    process.env.OPENCODE_MODEL = 'opencode-go/qwen3.5-plus';
+    try {
+      const { init, turn } = loadProvider();
+      const runner = makeRecordingRunner('ok');
+      const session = await init({ ...VALID_CONFIG, _runner: runner });
+      await turn(session, 'prompt');
+      const { args } = runner.calls[0];
+      assert.strictEqual(args[args.indexOf('--model') + 1], 'opencode-go/qwen3.5-plus');
+    } finally {
+      if (prev === undefined) delete process.env.OPENCODE_MODEL;
+      else process.env.OPENCODE_MODEL = prev;
+    }
+  }));
 });

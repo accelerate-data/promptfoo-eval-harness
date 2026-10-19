@@ -11,6 +11,12 @@ const makeOpenCodeCliPluginProvider = require('./opencode-cli-plugin-provider');
 const OpenCodeCliProvider = require('./opencode-cli-provider');
 const { EVAL_ROOT } = require('./roots');
 
+// VD-7010: the argv assertions below lock the v1 shape, so the CLI generation is
+// pinned rather than probed — otherwise the expectations would depend on
+// whichever OpenCode binary the machine happens to have installed. The v2 case
+// below overrides this var for the duration of the test.
+process.env.OPENCODE_CLI_MAJOR = '1';
+
 const {
   TRANSPORT_NAME,
   PROVIDER_ID,
@@ -362,8 +368,60 @@ test('runner receives expected argv shape: run --agent --dir --format --log-leve
   assert.equal(args[args.length - 1], 'Workspace: /tmp/probe-y\nDo Y');
 });
 
-test('runner env includes OPENCODE_CONFIG when cfg.opencode_config set, omits when null', async () => {
-  const captured = [];
+test('_resolveProbeCommand (VD-7010) names the command the selected runner starts', () => {
+  const { _resolveProbeCommand } = makeOpenCodeCliPluginProvider.__private;
+  const prev = process.env.OPENCODE_RUNNER_COMMAND;
+  process.env.OPENCODE_RUNNER_COMMAND = 'npx opencode';
+  try {
+    // Capture path: runOpenCodeCaptureAll honours the override, cfg first.
+    assert.equal(_resolveProbeCommand(true, 'my-opencode'), 'my-opencode');
+    assert.equal(_resolveProbeCommand(true, undefined), 'npx opencode');
+    // Default path: the base runOpenCode spawns plain `opencode` and ignores
+    // the override, so the override must not be probed here.
+    assert.equal(_resolveProbeCommand(false, 'my-opencode'), 'opencode');
+    assert.equal(_resolveProbeCommand(false, undefined), 'opencode');
+  } finally {
+    if (prev === undefined) delete process.env.OPENCODE_RUNNER_COMMAND;
+    else process.env.OPENCODE_RUNNER_COMMAND = prev;
+  }
+});
+
+test('v2 (VD-7010): argv drops --dir, adds --standalone, and runs from the workspace', async () => {  const prevMajor = process.env.OPENCODE_CLI_MAJOR;
+  const prevModel = process.env.OPENCODE_MODEL;
+  delete process.env.OPENCODE_MODEL;
+  process.env.OPENCODE_CLI_MAJOR = '2';
+  try {
+    const captured = [];
+    const runner = async (args, opts) => { captured.push({ args, opts }); return 'ok'; };
+    const provider = buildFactory(
+      {
+        agent: 'eval_high',
+        format: 'json',
+        log_level: 'DEBUG',
+        print_logs: true,
+      },
+      { runner },
+    );
+    await provider.callApi('Workspace: /tmp/probe-v2\nDo V2');
+    const { args, opts } = captured[0];
+    assert.equal(args[0], 'run');
+    assert.equal(args[1], '--standalone');
+    assert.ok(!args.includes('--dir'), 'v2 has no --dir');
+    assert.equal(args[args.indexOf('--agent') + 1], 'eval_high');
+    assert.equal(args[args.indexOf('--format') + 1], 'json');
+    assert.equal(args[args.indexOf('--log-level') + 1], 'debug');
+    assert.ok(args.includes('--print-logs'));
+    assert.equal(opts.cwd, path.resolve('/tmp/probe-v2'), 'v2 spawns in the workspace');
+    assert.equal(args[args.length - 1], 'Workspace: /tmp/probe-v2\nDo V2');
+  } finally {
+    if (prevModel === undefined) delete process.env.OPENCODE_MODEL;
+    else process.env.OPENCODE_MODEL = prevModel;
+    if (prevMajor === undefined) delete process.env.OPENCODE_CLI_MAJOR;
+    else process.env.OPENCODE_CLI_MAJOR = prevMajor;
+  }
+});
+
+test('runner env includes OPENCODE_CONFIG when cfg.opencode_config set, omits when null', async () => {  const captured = [];
   const runner = async (_args, opts) => { captured.push(opts.env); return 'ok'; };
 
   const withCfg = buildFactory(

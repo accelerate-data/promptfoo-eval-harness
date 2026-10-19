@@ -9,6 +9,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Versions follo
 
 ## [Unreleased]
 
+### Fixed
+
+- Both OpenCode CLI eval providers (`opencode-cli-provider.js` and its sibling
+  `opencode-cli-plugin-provider.js`) hard-coded the v1 `run` argv, so every run
+  against OpenCode v2 failed immediately with
+  `Unrecognized flag: --dir in command opencode run`. Argv and spawn cwd now
+  come from a new shared, generation-aware module
+  (`scripts/framework/opencode-cli-invocation.js`): v1 keeps its byte-for-byte
+  argv, while v2 emits `run --standalone --agent … --format … --log-level …`,
+  lowercases the log level (v2 rejects uppercase choices) and runs from
+  `project_dir`, which is where v2 now reads the project from. `--standalone`
+  is what makes `OPENCODE_CONFIG` resolve on v2. The generation is resolved
+  once per runner command — `OPENCODE_CLI_MAJOR` if set, else a one-shot
+  `<runner> --version` probe, else v1 — so no additional configuration is
+  required, and an unreadable probe keeps the previous v1 behaviour
+  (VD-7010).
+- `tests/_fixtures/phase-04-parent.sha`'s byte-identity guard pin was
+  deliberately advanced to the commit introducing the above change — a
+  reviewed, intentional evolution of the guarded base-provider contract, not
+  drift. See `docs/design.md` § "OpenCode CLI: Base + Sibling" for the guard's
+  updated rationale.
+
 ---
 
 ## [1.8.0] — TBD

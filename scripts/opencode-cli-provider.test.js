@@ -4,6 +4,11 @@ const test = require('node:test');
 
 const OpenCodeCliProvider = require('./framework/opencode-cli-provider');
 
+// VD-7010: this file locks the v1 argv shape, so the CLI generation is pinned
+// rather than probed — otherwise the expectations would depend on whichever
+// OpenCode binary the machine happens to have installed.
+process.env.OPENCODE_CLI_MAJOR = '1';
+
 test('OpenCodeCliProvider invokes opencode run with the configured eval agent', async () => {
   const previousStateHome = process.env.XDG_STATE_HOME;
   delete process.env.XDG_STATE_HOME;
