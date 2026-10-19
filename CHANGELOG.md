@@ -9,6 +9,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Versions follo
 
 ## [Unreleased]
 
+---
+
+## [1.9.0] — TBD
+
 ### Fixed
 
 - Both OpenCode CLI eval providers (`opencode-cli-provider.js` and its sibling
@@ -25,11 +29,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Versions follo
   `<runner> --version` probe, else v1 — so no additional configuration is
   required, and an unreadable probe keeps the previous v1 behaviour
   (VD-7010).
-- `tests/_fixtures/phase-04-parent.sha`'s byte-identity guard pin was
-  deliberately advanced to the commit introducing the above change — a
-  reviewed, intentional evolution of the guarded base-provider contract, not
-  drift. See `docs/design.md` § "OpenCode CLI: Base + Sibling" for the guard's
-  updated rationale.
+- `tests/_fixtures/phase-04-parent.sha`'s byte-identity guard pin was advanced
+  twice for the above change: once to the commit that introduced it, and again
+  to the squash-merge commit after the branch was squash-merged. Both were
+  reviewed, intentional evolutions of the guarded base-provider contract
+  rather than drift — the second also removes a dependency on the merged
+  branch still existing (the pin resolved in CI only because
+  `actions/checkout` fetches every branch). See `docs/design.md` § "OpenCode
+  CLI: Base + Sibling" for the guard's updated rationale.
+
+### Changed
+
+- `actions/setup-node` bumped from v6 to v7 in `ci.yml`,
+  `nightly-scenarios.yml`, and `release.yml`.
 
 ---
 
