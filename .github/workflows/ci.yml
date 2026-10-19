@@ -23,7 +23,7 @@ jobs:
           # phase-04 parent SHA recorded in tests/_fixtures/phase-04-parent.sha.
           # A shallow clone fails with `fatal: bad object <sha>`.
           fetch-depth: 0
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '20'
           cache: 'npm'
