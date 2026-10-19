@@ -478,6 +478,26 @@ edits impossible by accident, not to freeze the base forever. The sibling
 independently-duplicated argv-building code and does not currently support
 `OPENCODE_MODEL`.
 
+**VD-7010 update:** the pin was advanced a second time. OpenCode v2 removed
+`run --dir` (the working directory became the project), accepts `--log-level`
+in lowercase only, and honours `OPENCODE_CONFIG` only alongside `--standalone`.
+Both providers now build their `run` argv through a shared, generation-aware
+module, `scripts/framework/opencode-cli-invocation.js`, which resolves the
+generation once per runner command — explicit `OPENCODE_CLI_MAJOR` override,
+else a one-shot `<runner> --version` probe, else v1 — and returns that
+generation's argv and spawn cwd:
+
+```text
+v1  run --agent <a> --dir <projectDir> --format <f> --log-level <U>  (cwd: eval root)
+v2  run --standalone --agent <a> --format <f> --log-level <lowercased U>  (cwd: project_dir/workspace)
+```
+
+The v1 argv is byte-for-byte unchanged, and detection falls back to v1 whenever
+v2 cannot be proven — so a missing or unresponsive binary keeps the previous
+behaviour rather than failing the run. The sibling no longer owns an argv
+builder; it still passes no `modelOverride`, so `OPENCODE_MODEL` remains
+unsupported there (unchanged from VD-4204).
+
 Plugin features live in a **sibling**, not a subclass:
 
 ```text
