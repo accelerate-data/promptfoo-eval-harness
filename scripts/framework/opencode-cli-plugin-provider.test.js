@@ -329,7 +329,8 @@ test('base file scripts/framework/opencode-cli-provider.js is byte-identical fro
     assert.fail(
       `phase-04 parent SHA ${sha} is not resolvable in this clone — check fetch depth ` +
         '(shallow clone?) or that the branch was merged with a merge commit (not squash/rebase, ' +
-        'which can make branch-local commits unreachable).',
+        'which can make branch-local commits unreachable). A squash or rebase needs the pin ' +
+        "advanced to the commit on `main` that carries this file's change.",
     );
   }
   try {

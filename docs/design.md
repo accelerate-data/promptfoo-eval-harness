@@ -498,6 +498,17 @@ behaviour rather than failing the run. The sibling no longer owns an argv
 builder; it still passes no `modelOverride`, so `OPENCODE_MODEL` remains
 unsupported there (unchanged from VD-4204).
 
+**That branch was then squash-merged**, which rewrote its commits away, so the
+pin was advanced again to the squash commit on `main`. This matters beyond
+bookkeeping: the pin resolved in CI only because `actions/checkout` runs with
+`fetch-depth: 0`, which fetches *every* branch — the branch that still carried
+the pinned commit. Deleting that branch, the ordinary cleanup after a merge,
+would have left the pin unresolvable and failed this guard on `main` for a
+reason unrelated to the file's contents. A squash or rebase of a base-file
+change therefore needs the pin advanced to the resulting `main` commit in a
+follow-up change, unless the branch is merged with a real merge commit (which
+is why the merge-commit requirement exists at all).
+
 Plugin features live in a **sibling**, not a subclass:
 
 ```text
