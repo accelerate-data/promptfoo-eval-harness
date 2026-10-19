@@ -32,17 +32,17 @@
     "bench": "npm run bench:spawn-cost && npm run bench:throughput"
   },
   "dependencies": {
-    "@opencode-ai/sdk": "1.17.13",
-    "@openai/codex": "0.142.4",
-    "@openai/codex-sdk": "0.142.5",
-    "js-yaml": "^5.2.0",
+    "@openai/codex": "0.163.0",
+    "@openai/codex-sdk": "0.163.0",
+    "@opencode-ai/sdk": "1.19.3",
+    "js-yaml": "^5.5.0",
     "p-limit": "^3.1.0",
-    "promptfoo": "0.121.17",
-    "smol-toml": "^1.6.1",
-    "ws": "^8.18.0"
+    "promptfoo": "0.124.1",
+    "smol-toml": "^1.9.1",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
-    "markdownlint-cli": "^0.49.0"
+    "markdownlint-cli": "^0.49.1"
   },
   "overrides": {
     "@anthropic-ai/sdk": ">=0.91.1",
