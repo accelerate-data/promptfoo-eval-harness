@@ -32,7 +32,7 @@
     "bench": "npm run bench:spawn-cost && npm run bench:throughput"
   },
   "dependencies": {
-    "@openai/codex": "0.163.0",
+    "@openai/codex": "0.164.0",
     "@openai/codex-sdk": "0.163.0",
     "@opencode-ai/sdk": "1.19.3",
     "js-yaml": "^5.5.0",
