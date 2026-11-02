@@ -33,7 +33,7 @@
   },
   "dependencies": {
     "@openai/codex": "0.164.0",
-    "@openai/codex-sdk": "0.164.0",
+    "@openai/codex-sdk": "0.166.0",
     "@opencode-ai/sdk": "1.19.4",
     "js-yaml": "^5.5.0",
     "p-limit": "^3.1.0",
